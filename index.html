@@ -1,0 +1,146 @@
+<!doctype html>
+<html lang="nl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Storechecks</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <header class="app-header">
+      <div>
+        <p class="eyebrow">Italie & Frankrijk</p>
+        <h1>Storechecks</h1>
+      </div>
+      <div class="header-actions">
+        <button class="icon-button" id="exportButton" type="button" title="Exporteren" aria-label="Exporteren">
+          <span aria-hidden="true">↓</span>
+        </button>
+        <label class="icon-button" title="Importeren" aria-label="Importeren">
+          <span aria-hidden="true">↑</span>
+          <input id="importInput" type="file" accept="application/json" />
+        </label>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="entry-panel" aria-labelledby="entryTitle">
+        <h2 id="entryTitle">Nieuwe check</h2>
+        <form id="checkForm">
+          <div class="field-group two">
+            <label>
+              Keten
+              <input id="chain" name="chain" required placeholder="Bijv. Carrefour" />
+            </label>
+            <label>
+              Land
+              <select id="country" name="country" required>
+                <option value="">Kies land</option>
+                <option>Italie</option>
+                <option>Frankrijk</option>
+                <option>Nederland</option>
+                <option>Duitsland</option>
+                <option>Belgie</option>
+                <option>Spanje</option>
+              </select>
+            </label>
+          </div>
+
+          <label>
+            Filiaal / locatie
+            <input id="location" name="location" required placeholder="Adres, stad of winkelcentrum" />
+          </label>
+
+          <div class="field-group two">
+            <label>
+              Bezoekdatum
+              <input id="visitDate" name="visitDate" required type="date" />
+            </label>
+            <label>
+              Fotodatum
+              <input id="photoDate" name="photoDate" required type="date" />
+            </label>
+          </div>
+
+          <fieldset>
+            <legend>Categorie</legend>
+            <div class="segmented">
+              <label><input type="radio" name="category" value="Batterijen" checked /> Batterijen</label>
+              <label><input type="radio" name="category" value="Accessoires" /> Accessoires</label>
+              <label><input type="radio" name="category" value="Beide" /> Beide</label>
+            </div>
+          </fieldset>
+
+          <label>
+            Notities
+            <textarea id="notes" name="notes" rows="4" placeholder="Prijs, merk, schapindeling, promoties..."></textarea>
+          </label>
+
+          <label>
+            Foto's
+            <input id="photos" name="photos" required type="file" accept="image/*" multiple />
+          </label>
+
+          <div id="preview" class="preview" aria-live="polite"></div>
+          <button class="primary-button" type="submit">Check opslaan</button>
+        </form>
+      </section>
+
+      <section class="collection" aria-labelledby="collectionTitle">
+        <div class="collection-header">
+          <div>
+            <h2 id="collectionTitle">Bezoeken</h2>
+            <p id="summary">Nog geen checks opgeslagen.</p>
+          </div>
+          <button class="text-button" id="clearButton" type="button">Alles wissen</button>
+        </div>
+
+        <div class="filters">
+          <label>
+            Zoek
+            <input id="searchFilter" placeholder="Keten, stad, notitie..." />
+          </label>
+          <label>
+            Land
+            <select id="countryFilter">
+              <option value="">Alle landen</option>
+            </select>
+          </label>
+          <label>
+            Categorie
+            <select id="categoryFilter">
+              <option value="">Alle categorieen</option>
+              <option>Batterijen</option>
+              <option>Accessoires</option>
+              <option>Beide</option>
+            </select>
+          </label>
+        </div>
+
+        <div id="checks" class="checks" aria-live="polite"></div>
+      </section>
+    </main>
+
+    <template id="checkTemplate">
+      <article class="check-card">
+        <div class="check-card__top">
+          <div>
+            <p class="country"></p>
+            <h3></h3>
+            <p class="location"></p>
+          </div>
+          <button class="delete-button" type="button" title="Verwijderen" aria-label="Verwijderen">×</button>
+        </div>
+        <dl class="meta">
+          <div><dt>Bezoek</dt><dd class="visit-date"></dd></div>
+          <div><dt>Foto's</dt><dd class="photo-date"></dd></div>
+          <div><dt>Categorie</dt><dd class="category"></dd></div>
+        </dl>
+        <p class="notes"></p>
+        <div class="gallery"></div>
+      </article>
+    </template>
+
+    <script src="app.js"></script>
+  </body>
+</html>
