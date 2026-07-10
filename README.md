@@ -31,6 +31,21 @@ Via het exportmenu kun je een ZIP downloaden met:
 De ZIP bevat `storechecks.json`, `fotolinks.csv` en de foto's in mappen per land, keten, filiaal en datum.
 Als een foto niet bereikbaar is, wordt de ZIP alsnog gemaakt met `export-waarschuwingen.txt`.
 
+## Server-side ZIP export
+
+Voor grote exports staat er een Firebase Cloud Function in de map `functions/`. Die maakt de ZIP server-side en zet het resultaat in Firebase Storage onder `exports/{userId}/...`.
+
+Deploy-stappen:
+
+1. Installeer Firebase CLI.
+2. Log in met `firebase login`.
+3. Ga naar deze projectmap.
+4. Run `cd functions && npm install`.
+5. Run vanuit de projectmap `firebase deploy --only functions`.
+6. Publiceer ook de bijgewerkte Firestore- en Storage-regels uit `firebase-rules.md`.
+
+Zonder gedeployde Cloud Function blijft een exporttaak in de wachtrij staan.
+
 ## Firebase instellen
 
 1. Maak een Firebase-project aan via de Firebase Console.

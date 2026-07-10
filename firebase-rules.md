@@ -18,6 +18,14 @@ service cloud.firestore {
       allow create: if request.auth != null
         && request.resource.data.ownerUid == request.auth.uid;
     }
+
+    match /exportJobs/{document} {
+      allow read: if request.auth != null
+        && resource.data.ownerUid == request.auth.uid;
+
+      allow create: if request.auth != null
+        && request.resource.data.ownerUid == request.auth.uid;
+    }
   }
 }
 ```
@@ -29,6 +37,11 @@ service firebase.storage {
   match /b/{bucket}/o {
     match /storechecks/{userId}/{allPaths=**} {
       allow read, write: if request.auth != null
+        && request.auth.uid == userId;
+    }
+
+    match /exports/{userId}/{allPaths=**} {
+      allow read: if request.auth != null
         && request.auth.uid == userId;
     }
   }

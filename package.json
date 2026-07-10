@@ -1,0 +1,225 @@
+const { randomUUID } = require("node:crypto");
+const archiver = require("archiver");
+const admin = require("firebase-admin");
+const { onDocumentCreated } = require("firebase-functions/v2/firestore");
+const { logger } = require("firebase-functions");
+
+admin.initializeApp();
+
+const db = admin.firestore();
+const bucket = admin.storage().bucket();
+
+exports.createStorecheckExport = onDocumentCreated(
+  {
+    document: "exportJobs/{jobId}",
+    timeoutSeconds: 540,
+    memory: "1GiB",
+  },
+  async (event) => {
+    const jobId = event.params.jobId;
+    const jobRef = event.data.ref;
+    const job = event.data.data();
+
+    if (!job || !job.ownerUid) {
+      await jobRef.update({ status: "error", error: "Exporttaak mist eigenaar." });
+      return;
+    }
+
+    try {
+      await jobRef.update({
+        status: "running",
+        progressText: "Checks ophalen...",
+        startedAt: new Date().toISOString(),
+      });
+
+      const checks = await loadChecks(job);
+      const fileName = getExportFileName(job);
+      const storagePath = `exports/${job.ownerUid}/${jobId}/${fileName}`;
+      const token = randomUUID();
+      const output = bucket.file(storagePath).createWriteStream({
+        resumable: false,
+        metadata: {
+          contentType: "application/zip",
+          cacheControl: "private, max-age=0, no-store",
+          metadata: {
+            firebaseStorageDownloadTokens: token,
+            ownerUid: job.ownerUid,
+          },
+        },
+      });
+
+      const archive = archiver("zip", { zlib: { level: 0 } });
+      const warnings = [];
+      let addedPhotos = 0;
+
+      const complete = new Promise((resolve, reject) => {
+        output.on("close", resolve);
+        output.on("error", reject);
+        archive.on("error", reject);
+      });
+
+      archive.pipe(output);
+      archive.append(JSON.stringify(checks.map(toExportCheck), null, 2), { name: "storechecks.json" });
+      archive.append(buildPhotoLinksCsv(checks), { name: "fotolinks.csv" });
+
+      const photos = checks.flatMap((check) =>
+        (check.photos || []).map((photo, index) => ({ check, photo, index })),
+      );
+
+      for (const item of photos) {
+        addedPhotos += 1;
+        if (addedPhotos === 1 || addedPhotos % 10 === 0 || addedPhotos === photos.length) {
+          await jobRef.update({
+            progressText: `Foto ${addedPhotos}/${photos.length} toevoegen...`,
+          });
+        }
+
+        await appendPhoto(archive, item, warnings);
+      }
+
+      if (warnings.length) {
+        archive.append(warnings.join("\n"), { name: "export-waarschuwingen.txt" });
+      }
+
+      await jobRef.update({ progressText: "ZIP afronden..." });
+      await archive.finalize();
+      await complete;
+
+      await jobRef.update({
+        status: "complete",
+        progressText: "Klaar",
+        storagePath,
+        fileName,
+        photoCount: photos.length,
+        warningCount: warnings.length,
+        completedAt: new Date().toISOString(),
+      });
+    } catch (error) {
+      logger.error("Storecheck export failed", error);
+      await jobRef.update({
+        status: "error",
+        error: error.message || "Exporteren is niet gelukt.",
+        completedAt: new Date().toISOString(),
+      });
+    }
+  },
+);
+
+async function loadChecks(job) {
+  const snapshot = await db.collection("storechecks").where("ownerUid", "==", job.ownerUid).get();
+  let checks = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
+
+  if (job.scope === "country" && job.value) {
+    checks = checks.filter((check) => check.country === job.value);
+  }
+
+  if (job.scope === "year" && job.value) {
+    checks = checks.filter((check) => getCheckDate(check).slice(0, 4) === job.value);
+  }
+
+  return checks.sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
+}
+
+async function appendPhoto(archive, item, warnings) {
+  const { check, photo, index } = item;
+  const path = photo.path || "";
+  const label = `${check.chain || "Storecheck"} / ${check.location || "Filiaal"} / ${photo.name || `foto ${index + 1}`}`;
+
+  if (!path) {
+    warnings.push(`${label}: geen Storage-pad gevonden.`);
+    return;
+  }
+
+  const file = bucket.file(path);
+  const [exists] = await file.exists();
+  if (!exists) {
+    warnings.push(`${label}: bestand bestaat niet in Storage (${path}).`);
+    return;
+  }
+
+  const folderPath = [
+    "photos",
+    slugify(check.country || "onbekend-land"),
+    slugify(check.chain || "onbekende-keten"),
+    slugify(check.location || "onbekend-filiaal"),
+    getCheckDate(check) || "zonder-datum",
+  ].join("/");
+  const extension = getPhotoExtension(photo.name || "", photo.type || "");
+  const baseName = stripExtension(photo.name || `foto-${index + 1}`) || `foto-${index + 1}`;
+
+  archive.append(file.createReadStream(), {
+    name: `${folderPath}/${slugify(baseName)}${extension}`,
+  });
+}
+
+function toExportCheck(check) {
+  return {
+    id: check.id,
+    chain: check.chain || "",
+    country: check.country || "",
+    location: check.location || "",
+    date: getCheckDate(check),
+    notes: check.notes || "",
+    createdAt: check.createdAt || "",
+    photos: (check.photos || []).map((photo) => ({
+      name: photo.name || "",
+      type: photo.type || "",
+      path: photo.path || "",
+      url: photo.url || "",
+    })),
+  };
+}
+
+function buildPhotoLinksCsv(checks) {
+  const rows = [["Keten", "Land", "Filiaal", "Datum", "Foto", "Link"]];
+  checks.forEach((check) => {
+    (check.photos || []).forEach((photo, index) => {
+      rows.push([
+        check.chain || "",
+        check.country || "",
+        check.location || "",
+        getCheckDate(check),
+        photo.name || `Foto ${index + 1}`,
+        photo.url || photo.path || "",
+      ]);
+    });
+  });
+
+  return rows.map((row) => row.map(csvCell).join(",")).join("\n");
+}
+
+function csvCell(value) {
+  return `"${String(value).replace(/"/g, '""')}"`;
+}
+
+function getExportFileName(job) {
+  if (job.scope === "country" && job.value) return `storechecks-${slugify(job.value)}.zip`;
+  if (job.scope === "year" && job.value) return `storechecks-${job.value}.zip`;
+  return `storechecks-alles-${new Date().toISOString().slice(0, 10)}.zip`;
+}
+
+function getCheckDate(check) {
+  return check.visitDate || check.photoDate || "";
+}
+
+function getPhotoExtension(name, type) {
+  const existing = name.match(/\.[a-z0-9]+$/i);
+  if (existing) return existing[0].toLowerCase();
+  if (type === "image/png") return ".png";
+  if (type === "image/webp") return ".webp";
+  return ".jpg";
+}
+
+function stripExtension(name) {
+  return String(name).replace(/\.[a-z0-9]+$/i, "");
+}
+
+function slugify(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80) || "onbekend";
+}
