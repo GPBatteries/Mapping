@@ -19,6 +19,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
 import {
   deleteObject,
+  getBlob,
   getDownloadURL,
   getStorage,
   ref,
@@ -664,7 +665,7 @@ function toExportCheck(check) {
   };
 }
 
-async function addCheckPhotosToZip(zip, check) {
+async function addCheckPhotosToZip(zip, check, exportErrors) {
   const folderPath = [
     "photos",
     slugify(check.country || "onbekend-land"),
@@ -674,16 +675,25 @@ async function addCheckPhotosToZip(zip, check) {
   ].join("/");
 
   for (const [index, photo] of (check.photos || []).entries()) {
-    const blob = await photoToBlob(photo);
-    if (!blob) continue;
-    const extension = getPhotoExtension(photo, blob);
-    const baseName = stripExtension(photo.name) || `foto-${index + 1}`;
-    zip.file(`${folderPath}/${slugify(baseName)}${extension}`, blob);
+    try {
+      const blob = await photoToBlob(photo);
+      if (!blob) {
+        exportErrors.push(`${check.chain} / ${check.location}: ${photo.name || `foto ${index + 1}`} kon niet worden gevonden.`);
+        continue;
+      }
+      const extension = getPhotoExtension(photo, blob);
+      const baseName = stripExtension(photo.name) || `foto-${index + 1}`;
+      zip.file(`${folderPath}/${slugify(baseName)}${extension}`, blob);
+    } catch (error) {
+      console.error(error);
+      exportErrors.push(`${check.chain} / ${check.location}: ${photo.name || `foto ${index + 1}`} kon niet worden toegevoegd.`);
+    }
   }
 }
 
 async function photoToBlob(photo) {
   if (photo.data) return dataUrlToBlob(photo.data);
+  if (firebase && photo.path) return getBlob(ref(firebase.storage, photo.path));
   if (!photo.url) return null;
 
   const response = await fetch(photo.url);
@@ -786,16 +796,24 @@ async function exportChecksZip() {
 
   try {
     const zip = new JSZip();
+    const exportErrors = [];
     const cleanChecks = selectedChecks.map(toExportCheck);
     zip.file("storechecks.json", JSON.stringify(cleanChecks, null, 2));
 
     for (const check of selectedChecks) {
-      await addCheckPhotosToZip(zip, check);
+      await addCheckPhotosToZip(zip, check, exportErrors);
+    }
+
+    if (exportErrors.length) {
+      zip.file("export-waarschuwingen.txt", exportErrors.join("\n"));
     }
 
     const blob = await zip.generateAsync({ type: "blob" });
     downloadBlob(blob, `${getExportFileName()}.zip`);
     exportMenu.hidden = true;
+    if (exportErrors.length) {
+      alert(`ZIP gemaakt, maar ${exportErrors.length} foto${exportErrors.length === 1 ? "" : "'s"} konden niet worden toegevoegd. Zie export-waarschuwingen.txt in de ZIP.`);
+    }
   } catch (error) {
     console.error(error);
     alert("Exporteren is niet gelukt. Controleer of de foto's nog toegankelijk zijn.");
