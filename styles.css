@@ -7,9 +7,9 @@
   --text: #111315;
   --muted: #717c85;
   --line: rgba(155, 172, 178, 0.24);
-  --purple: #7471de;
-  --purple-dark: #6762d4;
-  --purple-soft: rgba(255, 255, 255, 0.12);
+  --brand: #30b700;
+  --brand-dark: #269200;
+  --brand-soft: rgba(48, 183, 0, 0.14);
   --lime: #caff2f;
   --blue-soft: #ddecff;
   --shadow: 0 24px 70px rgba(77, 95, 102, 0.16);
@@ -98,9 +98,14 @@ textarea {
   font-weight: 750;
 }
 
-.top-nav span {
+.top-nav button {
+  border: 0;
   padding: 8px 12px;
   border-radius: 8px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+  font-weight: inherit;
 }
 
 .top-nav .active {
@@ -226,7 +231,7 @@ h2 {
   padding: clamp(28px, 5vw, 48px);
   border: 1px solid rgba(255, 255, 255, 0.7);
   border-radius: 22px;
-  background: linear-gradient(145deg, #7977e1, #6964d2);
+  background: linear-gradient(145deg, #35c706, #269200);
   color: #ffffff;
   box-shadow: var(--shadow);
 }
@@ -262,7 +267,7 @@ h2 {
   min-height: calc(100vh - 145px);
   padding: 28px;
   border-radius: 10px;
-  background: linear-gradient(145deg, var(--purple), var(--purple-dark));
+  background: linear-gradient(145deg, var(--brand), var(--brand-dark));
   color: #ffffff;
   box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.28);
 }
@@ -333,7 +338,7 @@ textarea::placeholder {
 input:focus,
 select:focus,
 textarea:focus {
-  outline: 3px solid rgba(202, 255, 47, 0.24);
+  outline: 3px solid rgba(202, 255, 47, 0.26);
   border-color: rgba(255, 255, 255, 0.42);
 }
 
@@ -390,7 +395,7 @@ textarea:focus {
 
 .collection {
   display: grid;
-  grid-template-rows: auto auto auto 1fr;
+  grid-template-rows: auto 1fr;
   gap: 8px;
 }
 
@@ -435,13 +440,23 @@ textarea:focus {
   font-weight: 900;
 }
 
+.view-panel,
 .collection-header,
-.filters,
-.checks {
+.checks,
+.stores-list {
   border: 1px solid var(--line);
   border-radius: 10px;
   background: var(--panel);
   box-shadow: var(--card-shadow);
+}
+
+.view-panel {
+  display: grid;
+  gap: 8px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  box-shadow: none;
 }
 
 .collection-header {
@@ -459,24 +474,6 @@ textarea:focus {
 .collection-header p {
   margin-bottom: 0;
   color: var(--muted);
-}
-
-.filters {
-  display: grid;
-  grid-template-columns: minmax(220px, 1fr) minmax(150px, 220px);
-  gap: 12px;
-  padding: 16px;
-}
-
-.filters label {
-  color: var(--muted);
-}
-
-.filters input,
-.filters select {
-  border-color: transparent;
-  background: #ffffff;
-  color: var(--text);
 }
 
 .checks {
@@ -504,7 +501,7 @@ textarea:focus {
 
 .country {
   margin-bottom: 5px;
-  color: var(--purple-dark);
+  color: var(--brand-dark);
   font-size: 0.74rem;
   font-weight: 900;
   text-transform: uppercase;
@@ -583,6 +580,71 @@ textarea:focus {
   text-align: center;
 }
 
+.stores-layout {
+  display: grid;
+  grid-template-columns: minmax(240px, 330px) minmax(0, 1fr);
+  gap: 8px;
+  min-height: 420px;
+}
+
+.stores-list {
+  display: grid;
+  align-content: start;
+  gap: 8px;
+  padding: 12px;
+}
+
+.store-row {
+  display: flex;
+  width: 100%;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  border: 1px solid rgba(166, 181, 187, 0.18);
+  border-radius: 10px;
+  background: rgba(255, 255, 255, 0.82);
+  padding: 14px;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+}
+
+.store-row strong,
+.store-row small {
+  display: block;
+}
+
+.store-row strong {
+  margin-bottom: 3px;
+  font-size: 0.96rem;
+}
+
+.store-row small {
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.store-row em {
+  display: grid;
+  min-width: 28px;
+  height: 28px;
+  place-items: center;
+  border-radius: 8px;
+  background: var(--lime);
+  color: #253014;
+  font-style: normal;
+  font-weight: 900;
+}
+
+.store-row.active {
+  border-color: rgba(48, 183, 0, 0.38);
+  box-shadow: inset 0 0 0 1px rgba(48, 183, 0, 0.18);
+}
+
+.store-checks {
+  min-height: 420px;
+}
+
 @media (max-width: 1150px) {
   .app-header {
     grid-template-columns: 1fr;
@@ -618,7 +680,7 @@ textarea:focus {
   }
 
   .stat-grid,
-  .filters {
+  .stores-layout {
     grid-template-columns: 1fr;
   }
 }

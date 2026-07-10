@@ -14,10 +14,8 @@
           <p id="syncStatus" class="sync-status">Firebase wordt geladen...</p>
         </div>
         <nav class="top-nav" aria-label="Dashboard">
-          <span class="active">Dashboard</span>
-          <span>Winkels</span>
-          <span>Foto's</span>
-          <span>Rapport</span>
+          <button class="active" data-view="dashboard" type="button">Dashboard</button>
+          <button data-view="stores" type="button">Winkels</button>
         </nav>
         <div class="header-actions">
           <div id="userBadge" class="user-badge" hidden></div>
@@ -43,10 +41,6 @@
               <button class="primary-button compact" id="downloadZipButton" type="button">Download ZIP</button>
             </div>
           </div>
-          <label class="icon-button" title="Importeren" aria-label="Importeren">
-            <span aria-hidden="true">↑</span>
-            <input id="importInput" type="file" accept="application/json" />
-          </label>
         </div>
       </header>
 
@@ -133,28 +127,28 @@
             </article>
           </div>
 
-          <div class="collection-header">
-            <div>
-              <h2 id="collectionTitle">Bezoeken</h2>
-              <p id="summary">Nog geen checks opgeslagen.</p>
+          <section id="dashboardView" class="view-panel">
+            <div class="collection-header">
+              <div>
+                <h2 id="collectionTitle">Recente checks</h2>
+                <p id="summary">Nog geen checks opgeslagen.</p>
+              </div>
             </div>
-            <button class="text-button" id="clearButton" type="button">Alles wissen</button>
-          </div>
+            <div id="checks" class="checks" aria-live="polite"></div>
+          </section>
 
-          <div class="filters">
-            <label>
-              Zoek
-              <input id="searchFilter" placeholder="Keten, stad, notitie..." />
-            </label>
-            <label>
-              Land
-              <select id="countryFilter">
-                <option value="">Alle landen</option>
-              </select>
-            </label>
-          </div>
-
-          <div id="checks" class="checks" aria-live="polite"></div>
+          <section id="storesView" class="view-panel stores-view" hidden>
+            <div class="collection-header">
+              <div>
+                <h2>Winkels</h2>
+                <p id="storesSummary">Nog geen winkels opgeslagen.</p>
+              </div>
+            </div>
+            <div class="stores-layout">
+              <div id="storesList" class="stores-list" aria-live="polite"></div>
+              <div id="storeChecks" class="checks store-checks" aria-live="polite"></div>
+            </div>
+          </section>
         </section>
       </main>
 

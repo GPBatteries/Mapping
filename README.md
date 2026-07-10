@@ -8,9 +8,7 @@ Met Firebase kunnen foto's en bezoekgegevens blijvend online worden opgeslagen.
 - Keten
 - Land
 - Filiaal of locatie
-- Bezoekdatum
-- Fotodatum
-- Categorie: batterijen, accessoires of beide
+- Datum van bezoek en foto's
 - Notities
 - Meerdere foto's per bezoek
 
@@ -20,6 +18,16 @@ Zonder Firebase-configuratie gebruikt de site lokale browseropslag. Met Firebase
 
 - Firestore voor winkelbezoeken en metadata
 - Firebase Storage voor foto's
+
+## Export
+
+Via het exportmenu kun je een ZIP downloaden met:
+
+- alles
+- een selectie per land
+- een selectie per jaar
+
+De ZIP bevat `storechecks.json` en de foto's in mappen per land, keten, filiaal en datum.
 
 ## Firebase instellen
 

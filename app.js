@@ -11,7 +11,6 @@ import {
   collection,
   deleteDoc,
   doc,
-  getDocs,
   getFirestore,
   onSnapshot,
   query,
@@ -36,22 +35,24 @@ const loginButton = document.querySelector("#loginButton");
 const loginButtonHeader = document.querySelector("#loginButtonHeader");
 const logoutButton = document.querySelector("#logoutButton");
 const userBadge = document.querySelector("#userBadge");
+const navButtons = document.querySelectorAll(".top-nav button");
 const form = document.querySelector("#checkForm");
 const photoInput = document.querySelector("#photos");
 const preview = document.querySelector("#preview");
+const dashboardView = document.querySelector("#dashboardView");
+const storesView = document.querySelector("#storesView");
 const checksEl = document.querySelector("#checks");
+const storesList = document.querySelector("#storesList");
+const storeChecks = document.querySelector("#storeChecks");
 const template = document.querySelector("#checkTemplate");
 const summary = document.querySelector("#summary");
-const searchFilter = document.querySelector("#searchFilter");
-const countryFilter = document.querySelector("#countryFilter");
+const storesSummary = document.querySelector("#storesSummary");
 const exportButton = document.querySelector("#exportButton");
 const exportMenu = document.querySelector("#exportMenu");
 const exportScope = document.querySelector("#exportScope");
 const exportValue = document.querySelector("#exportValue");
 const exportValueLabel = document.querySelector("#exportValueLabel");
 const downloadZipButton = document.querySelector("#downloadZipButton");
-const importInput = document.querySelector("#importInput");
-const clearButton = document.querySelector("#clearButton");
 const visitDate = document.querySelector("#visitDate");
 const syncStatus = document.querySelector("#syncStatus");
 const totalChecks = document.querySelector("#totalChecks");
@@ -63,6 +64,8 @@ let checks = [];
 let firebase = null;
 let currentUser = null;
 let unsubscribeChecks = null;
+let currentView = "dashboard";
+let selectedStoreKey = "";
 
 const today = new Date().toISOString().slice(0, 10);
 visitDate.value = today;
@@ -70,15 +73,12 @@ visitDate.value = today;
 loginButton.addEventListener("click", login);
 loginButtonHeader.addEventListener("click", login);
 logoutButton.addEventListener("click", logout);
+navButtons.forEach((button) => button.addEventListener("click", () => setView(button.dataset.view)));
 photoInput.addEventListener("change", renderPreview);
 form.addEventListener("submit", saveCheck);
-searchFilter.addEventListener("input", renderChecks);
-countryFilter.addEventListener("change", renderChecks);
 exportButton.addEventListener("click", toggleExportMenu);
 exportScope.addEventListener("change", renderExportOptions);
 downloadZipButton.addEventListener("click", exportChecksZip);
-importInput.addEventListener("change", importChecks);
-clearButton.addEventListener("click", clearChecks);
 document.addEventListener("click", closeExportMenu);
 
 startApp();
@@ -90,7 +90,6 @@ function startApp() {
     checks = loadLocalChecks();
     setStatus("Lokale opslag actief");
     showApp();
-    renderCountryFilter();
     renderChecks();
     return;
   }
@@ -108,7 +107,6 @@ function startApp() {
     if (unsubscribeChecks) unsubscribeChecks();
     unsubscribeChecks = null;
     showLogin();
-    renderCountryFilter();
     renderChecks();
   });
 }
@@ -150,7 +148,6 @@ function showLogin() {
   userBadge.hidden = true;
   exportButton.hidden = true;
   exportMenu.hidden = true;
-  importInput.closest("label").hidden = true;
   setStatus("Niet ingelogd");
 }
 
@@ -161,7 +158,6 @@ function showApp(user) {
   logoutButton.hidden = !firebase;
   userBadge.hidden = !user;
   exportButton.hidden = false;
-  importInput.closest("label").hidden = false;
   renderExportOptions();
 
   if (user) {
@@ -180,7 +176,6 @@ function subscribeToChecks(user) {
       checks = snapshot.docs
         .map((document) => ({ id: document.id, ...document.data() }))
         .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
-      renderCountryFilter();
       renderChecks();
     },
     (error) => {
@@ -253,7 +248,6 @@ async function saveCheck(event) {
       const photos = await Promise.all(files.map(fileToLocalPhoto));
       checks.unshift({ id: checkId, ...baseCheck, photos });
       persistLocal();
-      renderCountryFilter();
       renderChecks();
     }
 
@@ -287,19 +281,6 @@ function fileToLocalPhoto(file) {
   });
 }
 
-function renderCountryFilter() {
-  const selected = countryFilter.value;
-  const countries = getCountries();
-  countryFilter.innerHTML = '<option value="">Alle landen</option>';
-  countries.forEach((country) => {
-    const option = document.createElement("option");
-    option.value = country;
-    option.textContent = country;
-    countryFilter.append(option);
-  });
-  countryFilter.value = selected;
-}
-
 function renderExportOptions() {
   const scope = exportScope.value;
   const values = scope === "country" ? getCountries() : scope === "year" ? getYears() : [];
@@ -317,21 +298,44 @@ function renderExportOptions() {
 }
 
 function renderChecks() {
-  const filtered = checks.filter(matchesFilters);
-  checksEl.innerHTML = "";
-  summary.textContent = `${checks.length} opgeslagen check${checks.length === 1 ? "" : "s"} - ${filtered.length} zichtbaar`;
   renderStats();
   renderExportOptions();
+  renderDashboardChecks();
+  renderStores();
+}
 
-  if (!filtered.length) {
+function setView(view) {
+  currentView = view || "dashboard";
+  dashboardView.hidden = currentView !== "dashboard";
+  storesView.hidden = currentView !== "stores";
+  navButtons.forEach((button) => {
+    button.classList.toggle("active", button.dataset.view === currentView);
+  });
+  renderChecks();
+}
+
+function renderDashboardChecks() {
+  const recentChecks = checks.slice(0, 6);
+  checksEl.innerHTML = "";
+  summary.textContent = checks.length
+    ? `${recentChecks.length} meest recente van ${checks.length} opgeslagen checks`
+    : "Nog geen checks opgeslagen.";
+
+  renderCheckCards(checksEl, recentChecks, "Voeg je eerste winkelbezoek toe.");
+}
+
+function renderCheckCards(container, list, emptyText) {
+  container.innerHTML = "";
+
+  if (!list.length) {
     const empty = document.createElement("p");
     empty.className = "empty";
-    empty.textContent = checks.length ? "Geen checks voor deze filters." : "Voeg je eerste winkelbezoek toe.";
-    checksEl.append(empty);
+    empty.textContent = emptyText;
+    container.append(empty);
     return;
   }
 
-  filtered.forEach((check) => {
+  list.forEach((check) => {
     const card = template.content.firstElementChild.cloneNode(true);
     card.querySelector(".country").textContent = check.country;
     card.querySelector("h3").textContent = check.chain;
@@ -349,8 +353,47 @@ function renderChecks() {
       gallery.append(img);
     });
 
-    checksEl.append(card);
+    container.append(card);
   });
+}
+
+function renderStores() {
+  const stores = getStores();
+  storesList.innerHTML = "";
+  storesSummary.textContent = stores.length
+    ? `${stores.length} winkel${stores.length === 1 ? "" : "s"} met opgeslagen checks`
+    : "Nog geen winkels opgeslagen.";
+
+  if (!stores.length) {
+    renderCheckCards(storeChecks, [], "Sla eerst een storecheck op.");
+    return;
+  }
+
+  if (!selectedStoreKey || !stores.some((store) => store.key === selectedStoreKey)) {
+    selectedStoreKey = stores[0].key;
+  }
+
+  stores.forEach((store) => {
+    const button = document.createElement("button");
+    button.className = "store-row";
+    button.classList.toggle("active", store.key === selectedStoreKey);
+    button.type = "button";
+    button.innerHTML = `
+      <span>
+        <strong>${escapeHtml(store.chain)}</strong>
+        <small>${escapeHtml(store.location)} · ${escapeHtml(store.country)}</small>
+      </span>
+      <em>${store.checks.length}</em>
+    `;
+    button.addEventListener("click", () => {
+      selectedStoreKey = store.key;
+      renderStores();
+    });
+    storesList.append(button);
+  });
+
+  const selectedStore = stores.find((store) => store.key === selectedStoreKey);
+  renderCheckCards(storeChecks, selectedStore ? selectedStore.checks : [], "Geen checks voor deze winkel.");
 }
 
 function renderStats() {
@@ -366,15 +409,6 @@ function renderStats() {
   totalPhotos.textContent = photoCount;
   totalCountries.textContent = countries.size;
   latestVisit.textContent = latest ? formatShortDate(latest) : "-";
-}
-
-function matchesFilters(check) {
-  const queryText = searchFilter.value.trim().toLowerCase();
-  const searchable = [check.chain, check.country, check.location, check.notes].join(" ").toLowerCase();
-  return (
-    (!queryText || searchable.includes(queryText)) &&
-    (!countryFilter.value || check.country === countryFilter.value)
-  );
 }
 
 function getSelectedExportChecks() {
@@ -397,6 +431,25 @@ function getExportFileName() {
 
 function getCountries() {
   return [...new Set(checks.map((check) => check.country).filter(Boolean))].sort();
+}
+
+function getStores() {
+  const grouped = new Map();
+  checks.forEach((check) => {
+    const key = [check.country, check.chain, check.location].map((value) => slugify(value || "onbekend")).join("__");
+    if (!grouped.has(key)) {
+      grouped.set(key, {
+        key,
+        chain: check.chain || "Onbekende keten",
+        country: check.country || "Onbekend land",
+        location: check.location || "Onbekend filiaal",
+        checks: [],
+      });
+    }
+    grouped.get(key).checks.push(check);
+  });
+
+  return [...grouped.values()].sort((a, b) => a.chain.localeCompare(b.chain) || a.location.localeCompare(b.location));
 }
 
 function getYears() {
@@ -498,6 +551,16 @@ function downloadBlob(blob, fileName) {
   URL.revokeObjectURL(link.href);
 }
 
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (char) => ({
+    "&": "&amp;",
+    "<": "&lt;",
+    ">": "&gt;",
+    "\"": "&quot;",
+    "'": "&#039;",
+  })[char]);
+}
+
 async function deleteCheck(id) {
   const check = checks.find((item) => item.id === id);
   if (!check) return;
@@ -513,29 +576,6 @@ async function deleteCheck(id) {
 
   checks = checks.filter((item) => item.id !== id);
   persistLocal();
-  renderCountryFilter();
-  renderChecks();
-}
-
-async function clearChecks() {
-  if (!checks.length || !confirm("Alle storechecks wissen?")) return;
-
-  if (firebase) {
-    const checksQuery = query(collection(firebase.db, COLLECTION_NAME), where("ownerUid", "==", currentUser.uid));
-    const snapshot = await getDocs(checksQuery);
-    await Promise.all(snapshot.docs.map((document) => deleteDoc(document.ref)));
-    const photoDeletes = checks.flatMap((check) =>
-      (check.photos || [])
-        .filter((photo) => photo.path)
-        .map((photo) => deleteObject(ref(firebase.storage, photo.path)).catch(() => null)),
-    );
-    await Promise.all(photoDeletes);
-    return;
-  }
-
-  checks = [];
-  persistLocal();
-  renderCountryFilter();
   renderChecks();
 }
 
@@ -580,40 +620,6 @@ async function exportChecksZip() {
     downloadZipButton.disabled = false;
     downloadZipButton.textContent = originalText;
   }
-}
-
-async function importChecks(event) {
-  const [file] = event.target.files;
-  if (!file) return;
-  const reader = new FileReader();
-  reader.onload = async () => {
-    try {
-      const imported = JSON.parse(reader.result);
-      if (!Array.isArray(imported)) throw new Error("Geen lijst");
-
-      if (firebase) {
-        await Promise.all(
-          imported.map(({ id, ...check }) =>
-            addDoc(collection(firebase.db, COLLECTION_NAME), {
-              ...check,
-              ownerUid: currentUser.uid,
-              ownerEmail: currentUser.email || "",
-            }),
-          ),
-        );
-      } else {
-        checks = imported;
-        persistLocal();
-        renderCountryFilter();
-        renderChecks();
-      }
-    } catch {
-      alert("Dit JSON-bestand kon niet worden geimporteerd.");
-    } finally {
-      importInput.value = "";
-    }
-  };
-  reader.readAsText(file);
 }
 
 function formatDate(value) {
