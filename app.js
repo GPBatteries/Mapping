@@ -19,6 +19,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
 import {
   deleteObject,
+  getBlob,
   getDownloadURL,
   getStorage,
   ref,
@@ -707,6 +708,7 @@ async function addCheckPhotosToZip(zip, check, exportState) {
   for (const [index, photo] of (check.photos || []).entries()) {
     exportState.done += 1;
     downloadZipButton.textContent = `Foto ${exportState.done}/${exportState.total}`;
+    await waitForPaint();
 
     try {
       const blob = await withTimeout(photoToBlob(photo), 15000, "Foto downloaden duurde te lang");
@@ -834,29 +836,37 @@ async function exportChecksZip() {
 
   const originalText = downloadZipButton.textContent;
   downloadZipButton.disabled = true;
-  downloadZipButton.textContent = "Export maken...";
+  downloadZipButton.textContent = "ZIP voorbereiden...";
 
   try {
     const zip = new JSZip();
+    const photoTotal = selectedChecks.reduce((total, check) => total + (check.photos || []).length, 0);
+    const exportState = { done: 0, errors: [], total: photoTotal };
     const cleanChecks = selectedChecks.map(toExportCheck);
     zip.file("storechecks.json", JSON.stringify(cleanChecks, null, 2));
     zip.file("fotolinks.csv", buildPhotoLinksCsv(selectedChecks));
-    zip.file("overzicht.html", buildExportHtml(selectedChecks));
-    zip.file(
-      "lees-mij.txt",
-      [
-        "Storechecks export",
-        "",
-        "Deze export bevat de storecheck-data en links naar de foto's in Firebase Storage.",
-        "De originele foto's worden niet in deze ZIP gedownload, zodat exporteren snel en betrouwbaar blijft.",
-        "Open overzicht.html voor een leesbare versie met klikbare fotolinks.",
-      ].join("\n"),
-    );
+
+    for (const check of selectedChecks) {
+      await addCheckPhotosToZip(zip, check, exportState);
+    }
+
+    if (exportState.errors.length) {
+      zip.file("export-waarschuwingen.txt", exportState.errors.join("\n"));
+    }
 
     downloadZipButton.textContent = "ZIP afronden...";
-    const blob = await zip.generateAsync({ type: "blob", compression: "STORE", streamFiles: true });
+    await waitForPaint();
+    const blob = await zip.generateAsync(
+      { type: "blob", compression: "STORE", streamFiles: true },
+      (metadata) => {
+        downloadZipButton.textContent = `ZIP ${Math.round(metadata.percent)}%`;
+      },
+    );
     downloadBlob(blob, `${getExportFileName()}.zip`);
     exportMenu.hidden = true;
+    if (exportState.errors.length) {
+      alert(`ZIP gemaakt, maar ${exportState.errors.length} foto${exportState.errors.length === 1 ? "" : "'s"} konden niet worden toegevoegd. Zie export-waarschuwingen.txt in de ZIP.`);
+    }
   } catch (error) {
     console.error(error);
     alert("Exporteren is niet gelukt. Probeer opnieuw of kies een kleinere selectie.");
@@ -864,6 +874,10 @@ async function exportChecksZip() {
     downloadZipButton.disabled = false;
     downloadZipButton.textContent = originalText;
   }
+}
+
+function waitForPaint() {
+  return new Promise((resolve) => window.requestAnimationFrame(() => resolve()));
 }
 
 function buildPhotoLinksCsv(list) {

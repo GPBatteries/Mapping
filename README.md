@@ -28,7 +28,7 @@ Via het exportmenu kun je een ZIP downloaden met:
 - een selectie per land
 - een selectie per jaar
 
-De ZIP bevat `storechecks.json` en de foto's in mappen per land, keten, filiaal en datum.
+De ZIP bevat `storechecks.json`, `fotolinks.csv` en de foto's in mappen per land, keten, filiaal en datum.
 Als een foto niet bereikbaar is, wordt de ZIP alsnog gemaakt met `export-waarschuwingen.txt`.
 
 ## Firebase instellen
