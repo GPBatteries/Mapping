@@ -716,6 +716,33 @@ textarea:focus {
   box-shadow: 0 12px 30px rgba(0, 0, 0, 0.2);
 }
 
+.photo-viewer__nav {
+  position: fixed;
+  top: 50%;
+  display: grid;
+  width: 54px;
+  height: 72px;
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.92);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 2.4rem;
+  font-weight: 700;
+  line-height: 1;
+  transform: translateY(-50%);
+  box-shadow: 0 18px 46px rgba(0, 0, 0, 0.22);
+}
+
+.photo-viewer__nav--prev {
+  left: 22px;
+}
+
+.photo-viewer__nav--next {
+  right: 22px;
+}
+
 .check-editor {
   position: fixed;
   inset: 0;
@@ -1084,6 +1111,20 @@ textarea:focus {
   .photo-viewer__close {
     top: 12px;
     right: 12px;
+  }
+
+  .photo-viewer__nav {
+    width: 46px;
+    height: 58px;
+    font-size: 2rem;
+  }
+
+  .photo-viewer__nav--prev {
+    left: 10px;
+  }
+
+  .photo-viewer__nav--next {
+    right: 10px;
   }
 
   .check-editor {

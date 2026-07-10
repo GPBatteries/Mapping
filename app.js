@@ -64,6 +64,8 @@ const photoViewer = document.querySelector("#photoViewer");
 const photoViewerImage = document.querySelector("#photoViewerImage");
 const photoViewerCaption = document.querySelector("#photoViewerCaption");
 const photoViewerClose = document.querySelector("#photoViewerClose");
+const photoViewerPrev = document.querySelector("#photoViewerPrev");
+const photoViewerNext = document.querySelector("#photoViewerNext");
 const checkEditor = document.querySelector("#checkEditor");
 const checkEditorClose = document.querySelector("#checkEditorClose");
 const checkEditorTitle = document.querySelector("#checkEditorTitle");
@@ -79,6 +81,8 @@ let unsubscribeChecks = null;
 let currentView = "dashboard";
 let selectedStoreKey = "";
 let editingCheckId = "";
+let viewerPhotos = [];
+let viewerPhotoIndex = 0;
 
 const today = new Date().toISOString().slice(0, 10);
 visitDate.value = today;
@@ -94,6 +98,8 @@ exportScope.addEventListener("change", renderExportOptions);
 downloadZipButton.addEventListener("click", exportChecksZip);
 document.addEventListener("click", closeExportMenu);
 photoViewerClose.addEventListener("click", closePhotoViewer);
+photoViewerPrev.addEventListener("click", () => showAdjacentPhoto(-1));
+photoViewerNext.addEventListener("click", () => showAdjacentPhoto(1));
 photoViewer.addEventListener("click", (event) => {
   if (event.target === photoViewer) closePhotoViewer();
 });
@@ -107,6 +113,8 @@ document.addEventListener("keydown", (event) => {
     closePhotoViewer();
     closeCheckEditor();
   }
+  if (!photoViewer.hidden && event.key === "ArrowLeft") showAdjacentPhoto(-1);
+  if (!photoViewer.hidden && event.key === "ArrowRight") showAdjacentPhoto(1);
 });
 
 startApp();
@@ -383,20 +391,20 @@ function renderCheckCards(container, list, emptyText) {
     });
 
     const gallery = card.querySelector(".gallery");
-    (check.photos || []).forEach((photo) => {
+    (check.photos || []).forEach((photo, index) => {
       const img = document.createElement("img");
       img.src = photo.url || photo.data;
       img.alt = `${check.chain} - ${photo.name}`;
       img.tabIndex = 0;
       img.addEventListener("click", (event) => {
         event.stopPropagation();
-        openPhotoViewer(img.src, img.alt);
+        openPhotoViewer(check.photos || [], index, check.chain);
       });
       img.addEventListener("keydown", (event) => {
         if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();
           event.stopPropagation();
-          openPhotoViewer(img.src, img.alt);
+          openPhotoViewer(check.photos || [], index, check.chain);
         }
       });
       gallery.append(img);
@@ -448,7 +456,7 @@ function renderCheckEditor() {
     const img = document.createElement("img");
     img.src = photo.url || photo.data;
     img.alt = `${check.chain} - ${photo.name}`;
-    img.addEventListener("click", () => openPhotoViewer(img.src, img.alt));
+    img.addEventListener("click", () => openPhotoViewer(check.photos || [], index, check.chain));
 
     const label = document.createElement("span");
     label.textContent = photo.name || `Foto ${index + 1}`;
@@ -522,13 +530,34 @@ async function saveCheckPhotos(checkId, photos) {
   renderCheckEditor();
 }
 
-function openPhotoViewer(src, caption) {
-  photoViewerImage.src = src;
-  photoViewerImage.alt = caption;
-  photoViewerCaption.textContent = caption;
+function openPhotoViewer(photos, startIndex = 0, checkName = "") {
+  viewerPhotos = (photos || []).map((photo, index) => ({
+    src: photo.url || photo.data,
+    caption: `${checkName} - ${photo.name || `Foto ${index + 1}`}`,
+  })).filter((photo) => photo.src);
+  viewerPhotoIndex = Math.min(Math.max(startIndex, 0), Math.max(viewerPhotos.length - 1, 0));
+  renderViewerPhoto();
   photoViewer.hidden = false;
   document.body.classList.add("viewer-open");
   photoViewerClose.focus();
+}
+
+function renderViewerPhoto() {
+  const photo = viewerPhotos[viewerPhotoIndex];
+  if (!photo) return;
+
+  photoViewerImage.src = photo.src;
+  photoViewerImage.alt = photo.caption;
+  photoViewerCaption.textContent = `${photo.caption} (${viewerPhotoIndex + 1}/${viewerPhotos.length})`;
+  const hasMultiple = viewerPhotos.length > 1;
+  photoViewerPrev.hidden = !hasMultiple;
+  photoViewerNext.hidden = !hasMultiple;
+}
+
+function showAdjacentPhoto(direction) {
+  if (!viewerPhotos.length) return;
+  viewerPhotoIndex = (viewerPhotoIndex + direction + viewerPhotos.length) % viewerPhotos.length;
+  renderViewerPhoto();
 }
 
 function closePhotoViewer() {
@@ -536,6 +565,8 @@ function closePhotoViewer() {
   photoViewer.hidden = true;
   photoViewerImage.src = "";
   photoViewerCaption.textContent = "";
+  viewerPhotos = [];
+  viewerPhotoIndex = 0;
   if (checkEditor.hidden) document.body.classList.remove("viewer-open");
 }
 
