@@ -24,7 +24,9 @@ import {
   ref,
   uploadBytes,
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-storage.js";
-import { firebaseConfig } from "./firebase-config.js";
+import * as firebaseConfigModule from "./firebase-config.js";
+
+const firebaseConfig = firebaseConfigModule.firebaseConfig || window.firebaseConfig || {};
 
 const STORAGE_KEY = "storechecks.v1";
 const COLLECTION_NAME = "storechecks";
@@ -119,13 +121,18 @@ document.addEventListener("keydown", (event) => {
 startApp();
 
 function startApp() {
-  firebase = createFirebaseClient();
+  try {
+    firebase = createFirebaseClient();
+  } catch (error) {
+    console.error(error);
+    setStatus("Firebase-configuratie klopt niet. Controleer firebase-config.js.");
+    showLogin();
+    return;
+  }
 
   if (!firebase) {
-    checks = loadLocalChecks();
-    setStatus("Lokale opslag actief");
-    showApp();
-    renderChecks();
+    setStatus("Firebase-configuratie ontbreekt. Controleer firebase-config.js.");
+    showLogin();
     return;
   }
 
