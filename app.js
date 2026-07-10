@@ -1,4 +1,26 @@
+import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
+import {
+  addDoc,
+  collection,
+  deleteDoc,
+  doc,
+  getDocs,
+  getFirestore,
+  onSnapshot,
+  orderBy,
+  query,
+} from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
+import {
+  deleteObject,
+  getDownloadURL,
+  getStorage,
+  ref,
+  uploadBytes,
+} from "https://www.gstatic.com/firebasejs/12.15.0/firebase-storage.js";
+import { firebaseConfig } from "./firebase-config.js";
+
 const STORAGE_KEY = "storechecks.v1";
+const COLLECTION_NAME = "storechecks";
 
 const form = document.querySelector("#checkForm");
 const photoInput = document.querySelector("#photos");
@@ -14,8 +36,10 @@ const importInput = document.querySelector("#importInput");
 const clearButton = document.querySelector("#clearButton");
 const visitDate = document.querySelector("#visitDate");
 const photoDate = document.querySelector("#photoDate");
+const syncStatus = document.querySelector("#syncStatus");
 
-let checks = loadChecks();
+let checks = [];
+let firebase = null;
 
 const today = new Date().toISOString().slice(0, 10);
 visitDate.value = today;
@@ -30,10 +54,52 @@ exportButton.addEventListener("click", exportChecks);
 importInput.addEventListener("change", importChecks);
 clearButton.addEventListener("click", clearChecks);
 
-renderCountryFilter();
-renderChecks();
+startApp();
 
-function loadChecks() {
+function startApp() {
+  firebase = createFirebaseClient();
+
+  if (!firebase) {
+    checks = loadLocalChecks();
+    setStatus("Lokale opslag actief");
+    renderCountryFilter();
+    renderChecks();
+    return;
+  }
+
+  setStatus("Verbonden met Firebase");
+  const checksQuery = query(collection(firebase.db, COLLECTION_NAME), orderBy("createdAt", "desc"));
+  onSnapshot(
+    checksQuery,
+    (snapshot) => {
+      checks = snapshot.docs.map((document) => ({ id: document.id, ...document.data() }));
+      renderCountryFilter();
+      renderChecks();
+    },
+    (error) => {
+      console.error(error);
+      setStatus("Firebase fout: controleer regels en configuratie");
+    },
+  );
+}
+
+function createFirebaseClient() {
+  const requiredKeys = ["apiKey", "authDomain", "projectId", "storageBucket", "appId"];
+  const isConfigured = requiredKeys.every((key) => Boolean(firebaseConfig[key]));
+  if (!isConfigured) return null;
+
+  const app = initializeApp(firebaseConfig);
+  return {
+    db: getFirestore(app),
+    storage: getStorage(app),
+  };
+}
+
+function setStatus(text) {
+  syncStatus.textContent = text;
+}
+
+function loadLocalChecks() {
   try {
     return JSON.parse(localStorage.getItem(STORAGE_KEY)) || [];
   } catch {
@@ -41,7 +107,7 @@ function loadChecks() {
   }
 }
 
-function persist() {
+function persistLocal() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(checks));
 }
 
@@ -57,32 +123,60 @@ function renderPreview() {
 
 async function saveCheck(event) {
   event.preventDefault();
-  const data = new FormData(form);
-  const photos = await Promise.all([...photoInput.files].map(fileToPhoto));
+  const saveButton = form.querySelector(".primary-button");
+  const originalText = saveButton.textContent;
+  saveButton.disabled = true;
+  saveButton.textContent = firebase ? "Uploaden..." : "Opslaan...";
 
-  checks.unshift({
-    id: crypto.randomUUID(),
-    chain: data.get("chain").trim(),
-    country: data.get("country"),
-    location: data.get("location").trim(),
-    visitDate: data.get("visitDate"),
-    photoDate: data.get("photoDate"),
-    category: data.get("category"),
-    notes: data.get("notes").trim(),
-    photos,
-    createdAt: new Date().toISOString(),
-  });
+  try {
+    const data = new FormData(form);
+    const files = [...photoInput.files];
+    const checkId = crypto.randomUUID();
+    const baseCheck = {
+      chain: data.get("chain").trim(),
+      country: data.get("country"),
+      location: data.get("location").trim(),
+      visitDate: data.get("visitDate"),
+      photoDate: data.get("photoDate"),
+      category: data.get("category"),
+      notes: data.get("notes").trim(),
+      createdAt: new Date().toISOString(),
+    };
 
-  persist();
-  form.reset();
-  visitDate.value = today;
-  photoDate.value = today;
-  preview.innerHTML = "";
-  renderCountryFilter();
-  renderChecks();
+    if (firebase) {
+      const photos = await Promise.all(files.map((file) => uploadPhoto(file, checkId)));
+      await addDoc(collection(firebase.db, COLLECTION_NAME), { ...baseCheck, photos });
+    } else {
+      const photos = await Promise.all(files.map(fileToLocalPhoto));
+      checks.unshift({ id: checkId, ...baseCheck, photos });
+      persistLocal();
+      renderCountryFilter();
+      renderChecks();
+    }
+
+    form.reset();
+    visitDate.value = today;
+    photoDate.value = today;
+    preview.innerHTML = "";
+  } catch (error) {
+    console.error(error);
+    alert("Opslaan is niet gelukt. Controleer je Firebase-configuratie en regels.");
+  } finally {
+    saveButton.disabled = false;
+    saveButton.textContent = originalText;
+  }
 }
 
-function fileToPhoto(file) {
+async function uploadPhoto(file, checkId) {
+  const safeName = file.name.replace(/[^\w.-]/g, "_");
+  const path = `${COLLECTION_NAME}/${checkId}/${Date.now()}-${safeName}`;
+  const storageRef = ref(firebase.storage, path);
+  await uploadBytes(storageRef, file, { contentType: file.type });
+  const url = await getDownloadURL(storageRef);
+  return { name: file.name, type: file.type, path, url };
+}
+
+function fileToLocalPhoto(file) {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve({ name: file.name, type: file.type, data: reader.result });
@@ -131,7 +225,7 @@ function renderChecks() {
     const gallery = card.querySelector(".gallery");
     check.photos.forEach((photo) => {
       const img = document.createElement("img");
-      img.src = photo.data;
+      img.src = photo.url || photo.data;
       img.alt = `${check.chain} - ${photo.name}`;
       gallery.append(img);
     });
@@ -141,26 +235,46 @@ function renderChecks() {
 }
 
 function matchesFilters(check) {
-  const query = searchFilter.value.trim().toLowerCase();
-  const text = [check.chain, check.country, check.location, check.category, check.notes].join(" ").toLowerCase();
+  const queryText = searchFilter.value.trim().toLowerCase();
+  const searchable = [check.chain, check.country, check.location, check.category, check.notes].join(" ").toLowerCase();
   return (
-    (!query || text.includes(query)) &&
+    (!queryText || searchable.includes(queryText)) &&
     (!countryFilter.value || check.country === countryFilter.value) &&
     (!categoryFilter.value || check.category === categoryFilter.value)
   );
 }
 
-function deleteCheck(id) {
-  checks = checks.filter((check) => check.id !== id);
-  persist();
+async function deleteCheck(id) {
+  const check = checks.find((item) => item.id === id);
+  if (!check) return;
+
+  if (firebase) {
+    await deleteDoc(doc(firebase.db, COLLECTION_NAME, id));
+    await Promise.all((check.photos || []).filter((photo) => photo.path).map((photo) => deleteObject(ref(firebase.storage, photo.path))));
+    return;
+  }
+
+  checks = checks.filter((item) => item.id !== id);
+  persistLocal();
   renderCountryFilter();
   renderChecks();
 }
 
-function clearChecks() {
+async function clearChecks() {
   if (!checks.length || !confirm("Alle storechecks wissen?")) return;
+
+  if (firebase) {
+    const snapshot = await getDocs(collection(firebase.db, COLLECTION_NAME));
+    await Promise.all(snapshot.docs.map((document) => deleteDoc(document.ref)));
+    const photoDeletes = checks.flatMap((check) =>
+      (check.photos || []).filter((photo) => photo.path).map((photo) => deleteObject(ref(firebase.storage, photo.path))),
+    );
+    await Promise.all(photoDeletes);
+    return;
+  }
+
   checks = [];
-  persist();
+  persistLocal();
   renderCountryFilter();
   renderChecks();
 }
@@ -174,18 +288,25 @@ function exportChecks() {
   URL.revokeObjectURL(link.href);
 }
 
-function importChecks(event) {
+async function importChecks(event) {
   const [file] = event.target.files;
   if (!file) return;
   const reader = new FileReader();
-  reader.onload = () => {
+  reader.onload = async () => {
     try {
       const imported = JSON.parse(reader.result);
       if (!Array.isArray(imported)) throw new Error("Geen lijst");
-      checks = imported;
-      persist();
-      renderCountryFilter();
-      renderChecks();
+
+      if (firebase) {
+        await Promise.all(
+          imported.map(({ id, ...check }) => addDoc(collection(firebase.db, COLLECTION_NAME), check)),
+        );
+      } else {
+        checks = imported;
+        persistLocal();
+        renderCountryFilter();
+        renderChecks();
+      }
     } catch {
       alert("Dit JSON-bestand kon niet worden geimporteerd.");
     } finally {

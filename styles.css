@@ -49,6 +49,13 @@ textarea {
   text-transform: uppercase;
 }
 
+.sync-status {
+  margin: 10px 0 0;
+  color: var(--muted);
+  font-size: 0.88rem;
+  font-weight: 700;
+}
+
 h1,
 h2,
 h3,
@@ -227,6 +234,11 @@ textarea:focus {
 .primary-button:hover,
 .icon-button:hover {
   background: var(--accent-strong);
+}
+
+.primary-button:disabled {
+  cursor: wait;
+  opacity: 0.7;
 }
 
 .collection-header {
