@@ -19,7 +19,6 @@ import {
 } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
 import {
   deleteObject,
-  getBlob,
   getDownloadURL,
   getStorage,
   ref,
@@ -804,37 +803,98 @@ async function exportChecksZip() {
 
   const originalText = downloadZipButton.textContent;
   downloadZipButton.disabled = true;
-  downloadZipButton.textContent = "ZIP maken...";
+  downloadZipButton.textContent = "Export maken...";
 
   try {
     const zip = new JSZip();
-    const photoTotal = selectedChecks.reduce((total, check) => total + (check.photos || []).length, 0);
-    const exportState = { done: 0, errors: [], total: photoTotal };
     const cleanChecks = selectedChecks.map(toExportCheck);
     zip.file("storechecks.json", JSON.stringify(cleanChecks, null, 2));
-
-    for (const check of selectedChecks) {
-      await addCheckPhotosToZip(zip, check, exportState);
-    }
-
-    if (exportState.errors.length) {
-      zip.file("export-waarschuwingen.txt", exportState.errors.join("\n"));
-    }
+    zip.file("fotolinks.csv", buildPhotoLinksCsv(selectedChecks));
+    zip.file("overzicht.html", buildExportHtml(selectedChecks));
+    zip.file(
+      "lees-mij.txt",
+      [
+        "Storechecks export",
+        "",
+        "Deze export bevat de storecheck-data en links naar de foto's in Firebase Storage.",
+        "De originele foto's worden niet in deze ZIP gedownload, zodat exporteren snel en betrouwbaar blijft.",
+        "Open overzicht.html voor een leesbare versie met klikbare fotolinks.",
+      ].join("\n"),
+    );
 
     downloadZipButton.textContent = "ZIP afronden...";
     const blob = await zip.generateAsync({ type: "blob", compression: "STORE", streamFiles: true });
     downloadBlob(blob, `${getExportFileName()}.zip`);
     exportMenu.hidden = true;
-    if (exportState.errors.length) {
-      alert(`ZIP gemaakt, maar ${exportState.errors.length} foto${exportState.errors.length === 1 ? "" : "'s"} konden niet worden toegevoegd. Zie export-waarschuwingen.txt in de ZIP.`);
-    }
   } catch (error) {
     console.error(error);
-    alert("Exporteren is niet gelukt. Controleer of de foto's nog toegankelijk zijn.");
+    alert("Exporteren is niet gelukt. Probeer opnieuw of kies een kleinere selectie.");
   } finally {
     downloadZipButton.disabled = false;
     downloadZipButton.textContent = originalText;
   }
+}
+
+function buildPhotoLinksCsv(list) {
+  const rows = [["Keten", "Land", "Filiaal", "Datum", "Foto", "Link"]];
+  list.forEach((check) => {
+    (check.photos || []).forEach((photo, index) => {
+      rows.push([
+        check.chain || "",
+        check.country || "",
+        check.location || "",
+        getCheckDate(check),
+        photo.name || `Foto ${index + 1}`,
+        photo.url || photo.path || "",
+      ]);
+    });
+  });
+
+  return rows.map((row) => row.map(csvCell).join(",")).join("\n");
+}
+
+function csvCell(value) {
+  return `"${String(value).replace(/"/g, '""')}"`;
+}
+
+function buildExportHtml(list) {
+  const items = list.map((check) => {
+    const photos = (check.photos || []).map((photo, index) => {
+      const url = photo.url || "";
+      const label = escapeHtml(photo.name || `Foto ${index + 1}`);
+      return url ? `<li><a href="${escapeHtml(url)}" target="_blank" rel="noopener">${label}</a></li>` : `<li>${label}</li>`;
+    }).join("");
+
+    return `
+      <article>
+        <h2>${escapeHtml(check.chain || "Storecheck")}</h2>
+        <p><strong>Land:</strong> ${escapeHtml(check.country || "")}</p>
+        <p><strong>Filiaal:</strong> ${escapeHtml(check.location || "")}</p>
+        <p><strong>Datum:</strong> ${escapeHtml(formatDate(getCheckDate(check)))}</p>
+        <p><strong>Notities:</strong> ${escapeHtml(check.notes || "Geen notities.")}</p>
+        <h3>Foto's</h3>
+        <ul>${photos || "<li>Geen foto's</li>"}</ul>
+      </article>
+    `;
+  }).join("");
+
+  return `<!doctype html>
+<html lang="nl">
+<head>
+  <meta charset="utf-8" />
+  <title>Storechecks export</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 32px; color: #111315; }
+    article { border-bottom: 1px solid #d8e3e7; padding: 18px 0; }
+    h1, h2 { margin-bottom: 8px; }
+    a { color: #269200; }
+  </style>
+</head>
+<body>
+  <h1>Storechecks export</h1>
+  ${items}
+</body>
+</html>`;
 }
 
 function formatDate(value) {
