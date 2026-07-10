@@ -1,5 +1,12 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-app.js";
 import {
+  GoogleAuthProvider,
+  getAuth,
+  onAuthStateChanged,
+  signInWithPopup,
+  signOut,
+} from "https://www.gstatic.com/firebasejs/12.15.0/firebase-auth.js";
+import {
   addDoc,
   collection,
   deleteDoc,
@@ -7,8 +14,8 @@ import {
   getDocs,
   getFirestore,
   onSnapshot,
-  orderBy,
   query,
+  where,
 } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
 import {
   deleteObject,
@@ -22,6 +29,12 @@ import { firebaseConfig } from "./firebase-config.js";
 const STORAGE_KEY = "storechecks.v1";
 const COLLECTION_NAME = "storechecks";
 
+const appLayout = document.querySelector("#appLayout");
+const loginPortal = document.querySelector("#loginPortal");
+const loginButton = document.querySelector("#loginButton");
+const loginButtonHeader = document.querySelector("#loginButtonHeader");
+const logoutButton = document.querySelector("#logoutButton");
+const userBadge = document.querySelector("#userBadge");
 const form = document.querySelector("#checkForm");
 const photoInput = document.querySelector("#photos");
 const preview = document.querySelector("#preview");
@@ -40,11 +53,16 @@ const syncStatus = document.querySelector("#syncStatus");
 
 let checks = [];
 let firebase = null;
+let currentUser = null;
+let unsubscribeChecks = null;
 
 const today = new Date().toISOString().slice(0, 10);
 visitDate.value = today;
 photoDate.value = today;
 
+loginButton.addEventListener("click", login);
+loginButtonHeader.addEventListener("click", login);
+logoutButton.addEventListener("click", logout);
 photoInput.addEventListener("change", renderPreview);
 form.addEventListener("submit", saveCheck);
 searchFilter.addEventListener("input", renderChecks);
@@ -62,17 +80,95 @@ function startApp() {
   if (!firebase) {
     checks = loadLocalChecks();
     setStatus("Lokale opslag actief");
+    showApp();
     renderCountryFilter();
     renderChecks();
     return;
   }
 
-  setStatus("Verbonden met Firebase");
-  const checksQuery = query(collection(firebase.db, COLLECTION_NAME), orderBy("createdAt", "desc"));
-  onSnapshot(
+  setStatus("Log in om Firebase te gebruiken");
+  onAuthStateChanged(firebase.auth, (user) => {
+    currentUser = user;
+    if (user) {
+      showApp(user);
+      subscribeToChecks(user);
+      return;
+    }
+
+    checks = [];
+    if (unsubscribeChecks) unsubscribeChecks();
+    unsubscribeChecks = null;
+    showLogin();
+    renderCountryFilter();
+    renderChecks();
+  });
+}
+
+function createFirebaseClient() {
+  const requiredKeys = ["apiKey", "authDomain", "projectId", "storageBucket", "appId"];
+  const isConfigured = requiredKeys.every((key) => Boolean(firebaseConfig[key]));
+  if (!isConfigured) return null;
+
+  const initializedApp = initializeApp(firebaseConfig);
+  return {
+    auth: getAuth(initializedApp),
+    db: getFirestore(initializedApp),
+    provider: new GoogleAuthProvider(),
+    storage: getStorage(initializedApp),
+  };
+}
+
+async function login() {
+  if (!firebase) return;
+  try {
+    await signInWithPopup(firebase.auth, firebase.provider);
+  } catch (error) {
+    console.error(error);
+    alert("Inloggen is niet gelukt. Controleer of Google Authentication aanstaat in Firebase.");
+  }
+}
+
+async function logout() {
+  if (!firebase) return;
+  await signOut(firebase.auth);
+}
+
+function showLogin() {
+  loginPortal.hidden = false;
+  appLayout.hidden = true;
+  loginButtonHeader.hidden = false;
+  logoutButton.hidden = true;
+  userBadge.hidden = true;
+  exportButton.hidden = true;
+  importInput.closest("label").hidden = true;
+  setStatus("Niet ingelogd");
+}
+
+function showApp(user) {
+  loginPortal.hidden = true;
+  appLayout.hidden = false;
+  loginButtonHeader.hidden = true;
+  logoutButton.hidden = !firebase;
+  userBadge.hidden = !user;
+  exportButton.hidden = false;
+  importInput.closest("label").hidden = false;
+
+  if (user) {
+    userBadge.textContent = user.email || user.displayName || "Ingelogd";
+    setStatus("Verbonden met Firebase");
+  }
+}
+
+function subscribeToChecks(user) {
+  if (unsubscribeChecks) unsubscribeChecks();
+
+  const checksQuery = query(collection(firebase.db, COLLECTION_NAME), where("ownerUid", "==", user.uid));
+  unsubscribeChecks = onSnapshot(
     checksQuery,
     (snapshot) => {
-      checks = snapshot.docs.map((document) => ({ id: document.id, ...document.data() }));
+      checks = snapshot.docs
+        .map((document) => ({ id: document.id, ...document.data() }))
+        .sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt)));
       renderCountryFilter();
       renderChecks();
     },
@@ -81,18 +177,6 @@ function startApp() {
       setStatus("Firebase fout: controleer regels en configuratie");
     },
   );
-}
-
-function createFirebaseClient() {
-  const requiredKeys = ["apiKey", "authDomain", "projectId", "storageBucket", "appId"];
-  const isConfigured = requiredKeys.every((key) => Boolean(firebaseConfig[key]));
-  if (!isConfigured) return null;
-
-  const app = initializeApp(firebaseConfig);
-  return {
-    db: getFirestore(app),
-    storage: getStorage(app),
-  };
 }
 
 function setStatus(text) {
@@ -123,6 +207,11 @@ function renderPreview() {
 
 async function saveCheck(event) {
   event.preventDefault();
+  if (firebase && !currentUser) {
+    alert("Log eerst in voordat je een check opslaat.");
+    return;
+  }
+
   const saveButton = form.querySelector(".primary-button");
   const originalText = saveButton.textContent;
   saveButton.disabled = true;
@@ -145,7 +234,12 @@ async function saveCheck(event) {
 
     if (firebase) {
       const photos = await Promise.all(files.map((file) => uploadPhoto(file, checkId)));
-      await addDoc(collection(firebase.db, COLLECTION_NAME), { ...baseCheck, photos });
+      await addDoc(collection(firebase.db, COLLECTION_NAME), {
+        ...baseCheck,
+        ownerUid: currentUser.uid,
+        ownerEmail: currentUser.email || "",
+        photos,
+      });
     } else {
       const photos = await Promise.all(files.map(fileToLocalPhoto));
       checks.unshift({ id: checkId, ...baseCheck, photos });
@@ -169,7 +263,7 @@ async function saveCheck(event) {
 
 async function uploadPhoto(file, checkId) {
   const safeName = file.name.replace(/[^\w.-]/g, "_");
-  const path = `${COLLECTION_NAME}/${checkId}/${Date.now()}-${safeName}`;
+  const path = `${COLLECTION_NAME}/${currentUser.uid}/${checkId}/${Date.now()}-${safeName}`;
   const storageRef = ref(firebase.storage, path);
   await uploadBytes(storageRef, file, { contentType: file.type });
   const url = await getDownloadURL(storageRef);
@@ -201,7 +295,7 @@ function renderCountryFilter() {
 function renderChecks() {
   const filtered = checks.filter(matchesFilters);
   checksEl.innerHTML = "";
-  summary.textContent = `${checks.length} opgeslagen check${checks.length === 1 ? "" : "s"} · ${filtered.length} zichtbaar`;
+  summary.textContent = `${checks.length} opgeslagen check${checks.length === 1 ? "" : "s"} - ${filtered.length} zichtbaar`;
 
   if (!filtered.length) {
     const empty = document.createElement("p");
@@ -223,7 +317,7 @@ function renderChecks() {
     card.querySelector(".delete-button").addEventListener("click", () => deleteCheck(check.id));
 
     const gallery = card.querySelector(".gallery");
-    check.photos.forEach((photo) => {
+    (check.photos || []).forEach((photo) => {
       const img = document.createElement("img");
       img.src = photo.url || photo.data;
       img.alt = `${check.chain} - ${photo.name}`;
@@ -250,7 +344,10 @@ async function deleteCheck(id) {
 
   if (firebase) {
     await deleteDoc(doc(firebase.db, COLLECTION_NAME, id));
-    await Promise.all((check.photos || []).filter((photo) => photo.path).map((photo) => deleteObject(ref(firebase.storage, photo.path))));
+    const photoDeletes = (check.photos || [])
+      .filter((photo) => photo.path)
+      .map((photo) => deleteObject(ref(firebase.storage, photo.path)).catch(() => null));
+    await Promise.all(photoDeletes);
     return;
   }
 
@@ -264,10 +361,13 @@ async function clearChecks() {
   if (!checks.length || !confirm("Alle storechecks wissen?")) return;
 
   if (firebase) {
-    const snapshot = await getDocs(collection(firebase.db, COLLECTION_NAME));
+    const checksQuery = query(collection(firebase.db, COLLECTION_NAME), where("ownerUid", "==", currentUser.uid));
+    const snapshot = await getDocs(checksQuery);
     await Promise.all(snapshot.docs.map((document) => deleteDoc(document.ref)));
     const photoDeletes = checks.flatMap((check) =>
-      (check.photos || []).filter((photo) => photo.path).map((photo) => deleteObject(ref(firebase.storage, photo.path))),
+      (check.photos || [])
+        .filter((photo) => photo.path)
+        .map((photo) => deleteObject(ref(firebase.storage, photo.path)).catch(() => null)),
     );
     await Promise.all(photoDeletes);
     return;
@@ -299,7 +399,13 @@ async function importChecks(event) {
 
       if (firebase) {
         await Promise.all(
-          imported.map(({ id, ...check }) => addDoc(collection(firebase.db, COLLECTION_NAME), check)),
+          imported.map(({ id, ...check }) =>
+            addDoc(collection(firebase.db, COLLECTION_NAME), {
+              ...check,
+              ownerUid: currentUser.uid,
+              ownerEmail: currentUser.email || "",
+            }),
+          ),
         );
       } else {
         checks = imported;

@@ -30,7 +30,9 @@ Zonder Firebase-configuratie gebruikt de site lokale browseropslag. Met Firebase
 5. Vul de waarden in bij `apiKey`, `authDomain`, `projectId`, `storageBucket`, `messagingSenderId` en `appId`.
 6. Zet Cloud Firestore aan.
 7. Zet Firebase Storage aan.
-8. Gebruik de regels uit `firebase-rules.md` om te testen.
+8. Zet Authentication aan en activeer Google als sign-in provider.
+9. Voeg je GitHub Pages domein toe bij Authentication > Settings > Authorized domains.
+10. Gebruik de beveiligde regels uit `firebase-rules.md`.
 
 De Firebase-webconfig is geen geheim wachtwoord. De beveiliging gebeurt via Firestore- en Storage-regels.
 

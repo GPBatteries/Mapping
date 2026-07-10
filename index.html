@@ -11,9 +11,12 @@
       <div>
         <p class="eyebrow">Italie & Frankrijk</p>
         <h1>Storechecks</h1>
-        <p id="syncStatus" class="sync-status">Lokale opslag actief</p>
+        <p id="syncStatus" class="sync-status">Firebase wordt geladen...</p>
       </div>
       <div class="header-actions">
+        <div id="userBadge" class="user-badge" hidden></div>
+        <button class="text-button" id="loginButtonHeader" type="button" hidden>Inloggen</button>
+        <button class="text-button" id="logoutButton" type="button" hidden>Uitloggen</button>
         <button class="icon-button" id="exportButton" type="button" title="Exporteren" aria-label="Exporteren">
           <span aria-hidden="true">↓</span>
         </button>
@@ -24,7 +27,16 @@
       </div>
     </header>
 
-    <main class="layout">
+    <section id="loginPortal" class="login-portal" hidden>
+      <div class="login-panel">
+        <p class="eyebrow">Beveiligde toegang</p>
+        <h2>Log in om storechecks te beheren</h2>
+        <p>Je foto's en winkelbezoeken worden na het inloggen opgeslagen in Firebase en zijn daarna beschikbaar op je andere apparaten.</p>
+        <button class="primary-button" id="loginButton" type="button">Inloggen met Google</button>
+      </div>
+    </section>
+
+    <main id="appLayout" class="layout" hidden>
       <section class="entry-panel" aria-labelledby="entryTitle">
         <h2 id="entryTitle">Nieuwe check</h2>
         <form id="checkForm">
@@ -130,7 +142,7 @@
             <h3></h3>
             <p class="location"></p>
           </div>
-          <button class="delete-button" type="button" title="Verwijderen" aria-label="Verwijderen">×</button>
+          <button class="delete-button" type="button" title="Verwijderen" aria-label="Verwijderen">x</button>
         </div>
         <dl class="meta">
           <div><dt>Bezoek</dt><dd class="visit-date"></dd></div>
