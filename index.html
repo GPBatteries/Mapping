@@ -200,10 +200,14 @@
     </div>
 
     <script>
-      window.addEventListener("error", () => {
+      window.addEventListener("error", (event) => {
         const status = document.querySelector("#syncStatus");
+        const target = event.target;
+        const isFileLoadError = target && (target.tagName === "SCRIPT" || target.tagName === "LINK");
         if (status && status.textContent === "Firebase wordt geladen...") {
-          status.textContent = "App kon niet laden. Controleer of alle bestanden zijn geupload.";
+          status.textContent = isFileLoadError
+            ? "Bestand ontbreekt of kon niet laden. Controleer GitHub-bestanden."
+            : "App kon niet laden. Controleer Firebase-configuratie.";
         }
       });
       window.addEventListener("unhandledrejection", () => {
