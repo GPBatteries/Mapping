@@ -24,7 +24,6 @@ import {
   ref,
   uploadBytes,
 } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-storage.js";
-import JSZip from "https://cdn.jsdelivr.net/npm/jszip@3.10.1/+esm";
 import { firebaseConfig } from "./firebase-config.js";
 
 const STORAGE_KEY = "storechecks.v1";
@@ -861,6 +860,7 @@ async function exportChecksZip() {
   downloadZipButton.textContent = "ZIP voorbereiden...";
 
   try {
+    const JSZip = await loadZipLibrary();
     const zip = new JSZip();
     const photoTotal = selectedChecks.reduce((total, check) => total + (check.photos || []).length, 0);
     const exportState = { done: 0, errors: [], total: photoTotal };
@@ -896,6 +896,11 @@ async function exportChecksZip() {
     downloadZipButton.disabled = false;
     downloadZipButton.textContent = originalText;
   }
+}
+
+async function loadZipLibrary() {
+  const module = await import("https://cdn.jsdelivr.net/npm/jszip@3.10.1/+esm");
+  return module.default;
 }
 
 async function startBackendExport() {

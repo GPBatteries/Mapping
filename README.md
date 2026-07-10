@@ -1,81 +1,218 @@
-# Storechecks website
+<!doctype html>
+<html lang="nl">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Storechecks</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <div class="app-shell">
+      <header class="app-header">
+        <div>
+          <p class="brand-mark">Storechecks</p>
+          <p id="syncStatus" class="sync-status">Firebase wordt geladen...</p>
+        </div>
+        <nav class="top-nav" aria-label="Dashboard">
+          <button class="active" data-view="dashboard" type="button">Dashboard</button>
+          <button data-view="stores" type="button">Winkels</button>
+        </nav>
+        <div class="header-actions">
+          <div id="userBadge" class="user-badge" hidden></div>
+          <button class="text-button" id="loginButtonHeader" type="button" hidden>Inloggen</button>
+          <button class="text-button" id="logoutButton" type="button" hidden>Uitloggen</button>
+          <div class="export-control">
+            <button class="icon-button" id="exportButton" type="button" title="Exporteren" aria-label="Exporteren">
+              <span aria-hidden="true">↓</span>
+            </button>
+            <div class="export-menu" id="exportMenu" hidden>
+              <label>
+                Export
+                <select id="exportScope">
+                  <option value="all">Alles</option>
+                  <option value="country">Per land</option>
+                  <option value="year">Per jaar</option>
+                </select>
+              </label>
+              <label id="exportValueLabel" hidden>
+                Selectie
+                <select id="exportValue"></select>
+              </label>
+              <button class="primary-button compact" id="downloadZipButton" type="button">Download ZIP</button>
+            </div>
+          </div>
+        </div>
+      </header>
 
-Een statische GitHub Pages-website voor winkelbezoeken in Italie en Frankrijk.
-Met Firebase kunnen foto's en bezoekgegevens blijvend online worden opgeslagen.
+      <section id="loginPortal" class="login-portal" hidden>
+        <div class="login-panel">
+          <p class="eyebrow">Beveiligde toegang</p>
+          <h2>Welkom terug</h2>
+          <p>Je foto's en winkelbezoeken worden na het inloggen opgeslagen in Firebase en zijn daarna beschikbaar op je andere apparaten.</p>
+          <button class="primary-button" id="loginButton" type="button">Inloggen met Google</button>
+        </div>
+      </section>
 
-## Wat je kunt vastleggen
+      <main id="appLayout" class="layout" hidden>
+        <section class="entry-panel" aria-labelledby="entryTitle">
+          <p class="panel-kicker">Italie & Frankrijk</p>
+          <h1 id="entryTitle">Nieuwe storecheck</h1>
+          <p class="panel-intro">Leg per keten en filiaal vast wat je ziet in het schap.</p>
+          <form id="checkForm">
+            <div class="field-group two">
+              <label>
+                Keten
+                <input id="chain" name="chain" required placeholder="Bijv. Carrefour" />
+              </label>
+              <label>
+                Land
+                <select id="country" name="country" required>
+                  <option value="">Kies land</option>
+                  <option>Italie</option>
+                  <option>Frankrijk</option>
+                  <option>Nederland</option>
+                  <option>Duitsland</option>
+                  <option>Belgie</option>
+                  <option>Spanje</option>
+                </select>
+              </label>
+            </div>
 
-- Keten
-- Land
-- Filiaal of locatie
-- Datum van bezoek en foto's
-- Notities
-- Meerdere foto's per bezoek
-- Foto's achteraf toevoegen of verwijderen door op een storecheck te klikken
+            <label>
+              Filiaal / locatie
+              <input id="location" name="location" required placeholder="Adres, stad of winkelcentrum" />
+            </label>
 
-## Opslag
+            <label>
+              Datum bezoek en foto's
+              <input id="visitDate" name="visitDate" required type="date" />
+            </label>
 
-Zonder Firebase-configuratie gebruikt de site lokale browseropslag. Met Firebase-configuratie gebruikt de site:
+            <label>
+              Notities
+              <textarea id="notes" name="notes" rows="4" placeholder="Prijs, merk, schapindeling, promoties..."></textarea>
+            </label>
 
-- Firestore voor winkelbezoeken en metadata
-- Firebase Storage voor foto's
+            <label>
+              Foto's
+              <input id="photos" name="photos" required type="file" accept="image/*" multiple />
+            </label>
 
-## Export
+            <div id="preview" class="preview" aria-live="polite"></div>
+            <button class="primary-button" type="submit">Check opslaan</button>
+          </form>
+        </section>
 
-Via het exportmenu kun je een ZIP downloaden met:
+        <section class="collection" aria-labelledby="collectionTitle">
+          <div class="stat-grid" aria-label="Samenvatting">
+            <article class="stat-card">
+              <p>Checks totaal</p>
+              <strong id="totalChecks">0</strong>
+              <span class="trend">Live</span>
+            </article>
+            <article class="stat-card">
+              <p>Foto's totaal</p>
+              <strong id="totalPhotos">0</strong>
+              <span class="trend">Storage</span>
+            </article>
+            <article class="stat-card">
+              <p>Landen</p>
+              <strong id="totalCountries">0</strong>
+              <span class="trend">Actief</span>
+            </article>
+            <article class="stat-card">
+              <p>Laatste bezoek</p>
+              <strong id="latestVisit">-</strong>
+              <span class="trend">Datum</span>
+            </article>
+          </div>
 
-- alles
-- een selectie per land
-- een selectie per jaar
+          <section id="dashboardView" class="view-panel">
+            <div class="collection-header">
+              <div>
+                <h2 id="collectionTitle">Recente checks</h2>
+                <p id="summary">Nog geen checks opgeslagen.</p>
+              </div>
+            </div>
+            <div id="checks" class="checks" aria-live="polite"></div>
+          </section>
 
-De ZIP bevat `storechecks.json`, `fotolinks.csv` en de foto's in mappen per land, keten, filiaal en datum.
-Als een foto niet bereikbaar is, wordt de ZIP alsnog gemaakt met `export-waarschuwingen.txt`.
+          <section id="storesView" class="view-panel stores-view" hidden>
+            <div class="collection-header">
+              <div>
+                <h2>Winkels</h2>
+                <p id="storesSummary">Nog geen winkels opgeslagen.</p>
+              </div>
+            </div>
+            <div class="stores-layout">
+              <div id="storesList" class="stores-list" aria-live="polite"></div>
+              <div id="storeChecks" class="checks store-checks" aria-live="polite"></div>
+            </div>
+          </section>
+        </section>
+      </main>
 
-## Server-side ZIP export
+      <template id="checkTemplate">
+        <article class="check-card">
+          <div class="check-card__top">
+            <div>
+              <p class="country"></p>
+              <h3></h3>
+              <p class="location"></p>
+            </div>
+            <button class="delete-button" type="button" title="Verwijderen" aria-label="Verwijderen">x</button>
+          </div>
+          <dl class="meta">
+            <div><dt>Datum</dt><dd class="visit-date"></dd></div>
+            <div><dt>Foto's</dt><dd class="photo-count"></dd></div>
+          </dl>
+          <p class="notes"></p>
+          <div class="gallery"></div>
+        </article>
+      </template>
 
-Voor grote exports staat er een Firebase Cloud Function in de map `functions/`. Die maakt de ZIP server-side en zet het resultaat in Firebase Storage onder `exports/{userId}/...`.
+      <div id="photoViewer" class="photo-viewer" role="dialog" aria-modal="true" aria-label="Foto bekijken" hidden>
+        <button class="photo-viewer__close" id="photoViewerClose" type="button" aria-label="Sluiten">x</button>
+        <button class="photo-viewer__nav photo-viewer__nav--prev" id="photoViewerPrev" type="button" aria-label="Vorige foto">‹</button>
+        <img id="photoViewerImage" alt="" />
+        <button class="photo-viewer__nav photo-viewer__nav--next" id="photoViewerNext" type="button" aria-label="Volgende foto">›</button>
+        <p id="photoViewerCaption"></p>
+      </div>
 
-Deploy-stappen:
+      <div id="checkEditor" class="check-editor" role="dialog" aria-modal="true" aria-label="Storecheck foto's beheren" hidden>
+        <section class="check-editor__panel">
+          <div class="check-editor__header">
+            <div>
+              <p class="eyebrow">Foto's beheren</p>
+              <h2 id="checkEditorTitle">Storecheck</h2>
+              <p id="checkEditorMeta"></p>
+            </div>
+            <button class="photo-viewer__close" id="checkEditorClose" type="button" aria-label="Sluiten">x</button>
+          </div>
+          <div id="checkEditorPhotos" class="editor-photos"></div>
+          <label class="editor-upload">
+            Extra foto's toevoegen
+            <input id="checkEditorFiles" type="file" accept="image/*" multiple />
+          </label>
+          <button class="primary-button compact" id="checkEditorUpload" type="button">Foto's toevoegen</button>
+        </section>
+      </div>
+    </div>
 
-1. Installeer Firebase CLI.
-2. Log in met `firebase login`.
-3. Ga naar deze projectmap.
-4. Run `cd functions && npm install`.
-5. Run vanuit de projectmap `firebase deploy --only functions`.
-6. Publiceer ook de bijgewerkte Firestore- en Storage-regels uit `firebase-rules.md`.
-
-Zonder gedeployde Cloud Function blijft een exporttaak in de wachtrij staan.
-
-## Firebase instellen
-
-1. Maak een Firebase-project aan via de Firebase Console.
-2. Voeg een Web App toe aan het project.
-3. Kopieer de Firebase-configuratie.
-4. Open `firebase-config.js`.
-5. Vul de waarden in bij `apiKey`, `authDomain`, `projectId`, `storageBucket`, `messagingSenderId` en `appId`.
-6. Zet Cloud Firestore aan.
-7. Zet Firebase Storage aan.
-8. Zet Authentication aan en activeer Google als sign-in provider.
-9. Voeg je GitHub Pages domein toe bij Authentication > Settings > Authorized domains.
-10. Gebruik de beveiligde regels uit `firebase-rules.md`.
-
-De Firebase-webconfig is geen geheim wachtwoord. De beveiliging gebeurt via Firestore- en Storage-regels.
-
-## Belangrijk bij lokale opslag
-
-Als `firebase-config.js` leeg blijft, heeft deze site geen server of database. De gegevens en foto's worden dan in de browser opgeslagen met `localStorage`.
-
-Gebruik daarom regelmatig de exportknop. Daarmee download je een JSON-bestand met alle storechecks en foto's. Op een andere computer of browser kun je dat bestand weer importeren.
-
-## Publiceren op GitHub Pages
-
-1. Maak een nieuwe GitHub-repository aan.
-2. Upload `index.html`, `styles.css`, `app.js` en deze `README.md`.
-3. Ga in GitHub naar `Settings` > `Pages`.
-4. Kies als bron `Deploy from a branch`.
-5. Kies de branch `main` en de map `/root`.
-6. Sla op. GitHub toont daarna de publieke website-link.
-
-## Lokaal openen
-
-Door de Firebase-module werkt lokaal testen het beste via een kleine lokale webserver of direct via GitHub Pages.
+    <script>
+      window.addEventListener("error", () => {
+        const status = document.querySelector("#syncStatus");
+        if (status && status.textContent === "Firebase wordt geladen...") {
+          status.textContent = "App kon niet laden. Controleer of alle bestanden zijn geupload.";
+        }
+      });
+      window.addEventListener("unhandledrejection", () => {
+        const status = document.querySelector("#syncStatus");
+        if (status && status.textContent === "Firebase wordt geladen...") {
+          status.textContent = "App kon niet laden. Controleer Firebase-configuratie.";
+        }
+      });
+    </script>
+    <script type="module" src="app.js"></script>
+  </body>
+</html>

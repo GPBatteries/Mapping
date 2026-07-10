@@ -1,9 +1,8 @@
 export const firebaseConfig = {
-  apiKey: "VUL_HIER_JE_API_KEY_IN",
-  authDomain: "jouw-project.firebaseapp.com",
-  projectId: "jouw-project-id",
-  storageBucket: "jouw-project.appspot.com",
-  messagingSenderId: "000000000000",
-  appId: "1:000000000000:web:0000000000000000000000",
+  apiKey: "AIzaSyDlWNgJQAO6H8RUyeEuDARqNx774MQMyGU",
+  authDomain: "mapping-ddc45.firebaseapp.com",
+  projectId: "mapping-ddc45",
+  storageBucket: "mapping-ddc45.firebasestorage.app",
+  messagingSenderId: "957709018632",
+  appId: "1:957709018632:web:e6750d8c3bda8a5487d3bd",
 };
-
