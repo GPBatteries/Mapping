@@ -14,6 +14,7 @@ import {
   getFirestore,
   onSnapshot,
   query,
+  updateDoc,
   where,
 } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-firestore.js";
 import {
@@ -59,6 +60,17 @@ const totalChecks = document.querySelector("#totalChecks");
 const totalPhotos = document.querySelector("#totalPhotos");
 const totalCountries = document.querySelector("#totalCountries");
 const latestVisit = document.querySelector("#latestVisit");
+const photoViewer = document.querySelector("#photoViewer");
+const photoViewerImage = document.querySelector("#photoViewerImage");
+const photoViewerCaption = document.querySelector("#photoViewerCaption");
+const photoViewerClose = document.querySelector("#photoViewerClose");
+const checkEditor = document.querySelector("#checkEditor");
+const checkEditorClose = document.querySelector("#checkEditorClose");
+const checkEditorTitle = document.querySelector("#checkEditorTitle");
+const checkEditorMeta = document.querySelector("#checkEditorMeta");
+const checkEditorPhotos = document.querySelector("#checkEditorPhotos");
+const checkEditorFiles = document.querySelector("#checkEditorFiles");
+const checkEditorUpload = document.querySelector("#checkEditorUpload");
 
 let checks = [];
 let firebase = null;
@@ -66,6 +78,7 @@ let currentUser = null;
 let unsubscribeChecks = null;
 let currentView = "dashboard";
 let selectedStoreKey = "";
+let editingCheckId = "";
 
 const today = new Date().toISOString().slice(0, 10);
 visitDate.value = today;
@@ -80,6 +93,21 @@ exportButton.addEventListener("click", toggleExportMenu);
 exportScope.addEventListener("change", renderExportOptions);
 downloadZipButton.addEventListener("click", exportChecksZip);
 document.addEventListener("click", closeExportMenu);
+photoViewerClose.addEventListener("click", closePhotoViewer);
+photoViewer.addEventListener("click", (event) => {
+  if (event.target === photoViewer) closePhotoViewer();
+});
+checkEditorClose.addEventListener("click", closeCheckEditor);
+checkEditor.addEventListener("click", (event) => {
+  if (event.target === checkEditor) closeCheckEditor();
+});
+checkEditorUpload.addEventListener("click", addPhotosToEditingCheck);
+document.addEventListener("keydown", (event) => {
+  if (event.key === "Escape") {
+    closePhotoViewer();
+    closeCheckEditor();
+  }
+});
 
 startApp();
 
@@ -302,6 +330,7 @@ function renderChecks() {
   renderExportOptions();
   renderDashboardChecks();
   renderStores();
+  if (editingCheckId && !checkEditor.hidden) renderCheckEditor();
 }
 
 function setView(view) {
@@ -337,24 +366,177 @@ function renderCheckCards(container, list, emptyText) {
 
   list.forEach((check) => {
     const card = template.content.firstElementChild.cloneNode(true);
+    card.tabIndex = 0;
+    card.addEventListener("click", () => openCheckEditor(check.id));
+    card.addEventListener("keydown", (event) => {
+      if (event.key === "Enter") openCheckEditor(check.id);
+    });
     card.querySelector(".country").textContent = check.country;
     card.querySelector("h3").textContent = check.chain;
     card.querySelector(".location").textContent = check.location;
     card.querySelector(".visit-date").textContent = formatDate(getCheckDate(check));
     card.querySelector(".photo-count").textContent = `${(check.photos || []).length}`;
     card.querySelector(".notes").textContent = check.notes || "Geen notities.";
-    card.querySelector(".delete-button").addEventListener("click", () => deleteCheck(check.id));
+    card.querySelector(".delete-button").addEventListener("click", (event) => {
+      event.stopPropagation();
+      deleteCheck(check.id);
+    });
 
     const gallery = card.querySelector(".gallery");
     (check.photos || []).forEach((photo) => {
       const img = document.createElement("img");
       img.src = photo.url || photo.data;
       img.alt = `${check.chain} - ${photo.name}`;
+      img.tabIndex = 0;
+      img.addEventListener("click", (event) => {
+        event.stopPropagation();
+        openPhotoViewer(img.src, img.alt);
+      });
+      img.addEventListener("keydown", (event) => {
+        if (event.key === "Enter" || event.key === " ") {
+          event.preventDefault();
+          event.stopPropagation();
+          openPhotoViewer(img.src, img.alt);
+        }
+      });
       gallery.append(img);
     });
 
     container.append(card);
   });
+}
+
+function openCheckEditor(checkId) {
+  editingCheckId = checkId;
+  renderCheckEditor();
+  checkEditor.hidden = false;
+  document.body.classList.add("viewer-open");
+  checkEditorClose.focus();
+}
+
+function closeCheckEditor() {
+  if (checkEditor.hidden) return;
+  checkEditor.hidden = true;
+  editingCheckId = "";
+  checkEditorFiles.value = "";
+  if (photoViewer.hidden) document.body.classList.remove("viewer-open");
+}
+
+function renderCheckEditor() {
+  const check = checks.find((item) => item.id === editingCheckId);
+  if (!check) {
+    closeCheckEditor();
+    return;
+  }
+
+  checkEditorTitle.textContent = check.chain || "Storecheck";
+  checkEditorMeta.textContent = `${check.location || "Onbekend filiaal"} - ${formatDate(getCheckDate(check))}`;
+  checkEditorPhotos.innerHTML = "";
+
+  if (!(check.photos || []).length) {
+    const empty = document.createElement("p");
+    empty.className = "empty editor-empty";
+    empty.textContent = "Nog geen foto's bij deze check.";
+    checkEditorPhotos.append(empty);
+    return;
+  }
+
+  (check.photos || []).forEach((photo, index) => {
+    const item = document.createElement("article");
+    item.className = "editor-photo";
+
+    const img = document.createElement("img");
+    img.src = photo.url || photo.data;
+    img.alt = `${check.chain} - ${photo.name}`;
+    img.addEventListener("click", () => openPhotoViewer(img.src, img.alt));
+
+    const label = document.createElement("span");
+    label.textContent = photo.name || `Foto ${index + 1}`;
+
+    const button = document.createElement("button");
+    button.type = "button";
+    button.textContent = "Verwijderen";
+    button.addEventListener("click", () => removePhotoFromEditingCheck(index));
+
+    item.append(img, label, button);
+    checkEditorPhotos.append(item);
+  });
+}
+
+async function addPhotosToEditingCheck() {
+  const check = checks.find((item) => item.id === editingCheckId);
+  const files = [...checkEditorFiles.files];
+  if (!check || !files.length) return;
+
+  const originalText = checkEditorUpload.textContent;
+  checkEditorUpload.disabled = true;
+  checkEditorUpload.textContent = "Toevoegen...";
+
+  try {
+    const newPhotos = firebase
+      ? await Promise.all(files.map((file) => uploadPhoto(file, check.id)))
+      : await Promise.all(files.map(fileToLocalPhoto));
+    const updatedPhotos = [...(check.photos || []), ...newPhotos];
+    await saveCheckPhotos(check.id, updatedPhotos);
+    checkEditorFiles.value = "";
+  } catch (error) {
+    console.error(error);
+    alert("Foto's toevoegen is niet gelukt.");
+  } finally {
+    checkEditorUpload.disabled = false;
+    checkEditorUpload.textContent = originalText;
+  }
+}
+
+async function removePhotoFromEditingCheck(photoIndex) {
+  const check = checks.find((item) => item.id === editingCheckId);
+  if (!check) return;
+
+  const photo = (check.photos || [])[photoIndex];
+  if (!photo || !confirm("Deze foto verwijderen?")) return;
+
+  try {
+    if (firebase && photo.path) {
+      await deleteObject(ref(firebase.storage, photo.path)).catch(() => null);
+    }
+    const updatedPhotos = (check.photos || []).filter((_, index) => index !== photoIndex);
+    await saveCheckPhotos(check.id, updatedPhotos);
+  } catch (error) {
+    console.error(error);
+    alert("Foto verwijderen is niet gelukt.");
+  }
+}
+
+async function saveCheckPhotos(checkId, photos) {
+  if (firebase) {
+    await updateDoc(doc(firebase.db, COLLECTION_NAME, checkId), { photos });
+    checks = checks.map((check) => (check.id === checkId ? { ...check, photos } : check));
+    renderChecks();
+    renderCheckEditor();
+    return;
+  }
+
+  checks = checks.map((check) => (check.id === checkId ? { ...check, photos } : check));
+  persistLocal();
+  renderChecks();
+  renderCheckEditor();
+}
+
+function openPhotoViewer(src, caption) {
+  photoViewerImage.src = src;
+  photoViewerImage.alt = caption;
+  photoViewerCaption.textContent = caption;
+  photoViewer.hidden = false;
+  document.body.classList.add("viewer-open");
+  photoViewerClose.focus();
+}
+
+function closePhotoViewer() {
+  if (photoViewer.hidden) return;
+  photoViewer.hidden = true;
+  photoViewerImage.src = "";
+  photoViewerCaption.textContent = "";
+  if (checkEditor.hidden) document.body.classList.remove("viewer-open");
 }
 
 function renderStores() {
@@ -564,6 +746,7 @@ function escapeHtml(value) {
 async function deleteCheck(id) {
   const check = checks.find((item) => item.id === id);
   if (!check) return;
+  if (editingCheckId === id) closeCheckEditor();
 
   if (firebase) {
     await deleteDoc(doc(firebase.db, COLLECTION_NAME, id));

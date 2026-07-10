@@ -170,6 +170,31 @@
           <div class="gallery"></div>
         </article>
       </template>
+
+      <div id="photoViewer" class="photo-viewer" role="dialog" aria-modal="true" aria-label="Foto bekijken" hidden>
+        <button class="photo-viewer__close" id="photoViewerClose" type="button" aria-label="Sluiten">x</button>
+        <img id="photoViewerImage" alt="" />
+        <p id="photoViewerCaption"></p>
+      </div>
+
+      <div id="checkEditor" class="check-editor" role="dialog" aria-modal="true" aria-label="Storecheck foto's beheren" hidden>
+        <section class="check-editor__panel">
+          <div class="check-editor__header">
+            <div>
+              <p class="eyebrow">Foto's beheren</p>
+              <h2 id="checkEditorTitle">Storecheck</h2>
+              <p id="checkEditorMeta"></p>
+            </div>
+            <button class="photo-viewer__close" id="checkEditorClose" type="button" aria-label="Sluiten">x</button>
+          </div>
+          <div id="checkEditorPhotos" class="editor-photos"></div>
+          <label class="editor-upload">
+            Extra foto's toevoegen
+            <input id="checkEditorFiles" type="file" accept="image/*" multiple />
+          </label>
+          <button class="primary-button compact" id="checkEditorUpload" type="button">Foto's toevoegen</button>
+        </section>
+      </div>
     </div>
 
     <script type="module" src="app.js"></script>

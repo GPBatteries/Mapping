@@ -11,6 +11,7 @@ Met Firebase kunnen foto's en bezoekgegevens blijvend online worden opgeslagen.
 - Datum van bezoek en foto's
 - Notities
 - Meerdere foto's per bezoek
+- Foto's achteraf toevoegen of verwijderen door op een storecheck te klikken
 
 ## Opslag
 

@@ -367,6 +367,15 @@ textarea:focus {
   border: 1px solid rgba(255, 255, 255, 0.2);
 }
 
+.gallery img {
+  cursor: zoom-in;
+}
+
+.gallery img:focus-visible {
+  outline: 3px solid rgba(48, 183, 0, 0.38);
+  outline-offset: 3px;
+}
+
 .primary-button {
   min-height: 48px;
   border-radius: 11px;
@@ -490,7 +499,13 @@ textarea:focus {
   border: 1px solid rgba(166, 181, 187, 0.18);
   border-radius: 10px;
   background: rgba(255, 255, 255, 0.82);
+  cursor: pointer;
   box-shadow: 0 10px 24px rgba(71, 88, 96, 0.07);
+}
+
+.check-card:focus-visible {
+  outline: 3px solid rgba(48, 183, 0, 0.35);
+  outline-offset: 3px;
 }
 
 .check-card__top {
@@ -643,6 +658,164 @@ textarea:focus {
 
 .store-checks {
   min-height: 420px;
+}
+
+.viewer-open {
+  overflow: hidden;
+}
+
+.photo-viewer {
+  position: fixed;
+  inset: 0;
+  z-index: 100;
+  display: grid;
+  grid-template-rows: 1fr auto;
+  place-items: center;
+  gap: 14px;
+  padding: clamp(18px, 4vw, 42px);
+  background: rgba(13, 18, 17, 0.84);
+  backdrop-filter: blur(14px);
+}
+
+.photo-viewer img {
+  display: block;
+  max-width: min(100%, 1400px);
+  max-height: calc(100vh - 120px);
+  object-fit: contain;
+  border-radius: 14px;
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.36);
+}
+
+.photo-viewer p {
+  margin: 0;
+  color: rgba(255, 255, 255, 0.82);
+  font-weight: 750;
+  text-align: center;
+}
+
+.photo-viewer__close {
+  position: fixed;
+  top: 22px;
+  right: 22px;
+  display: grid;
+  width: 42px;
+  height: 42px;
+  place-items: center;
+  border: 0;
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--text);
+  cursor: pointer;
+  font-weight: 900;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.2);
+}
+
+.check-editor {
+  position: fixed;
+  inset: 0;
+  z-index: 90;
+  display: grid;
+  place-items: center;
+  padding: clamp(18px, 4vw, 42px);
+  background: rgba(13, 18, 17, 0.62);
+  backdrop-filter: blur(12px);
+}
+
+.check-editor__panel {
+  width: min(100%, 820px);
+  max-height: min(780px, calc(100vh - 56px));
+  overflow: auto;
+  padding: clamp(20px, 4vw, 30px);
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  border-radius: 20px;
+  background: rgba(248, 252, 251, 0.96);
+  box-shadow: 0 28px 80px rgba(0, 0, 0, 0.22);
+}
+
+.check-editor__header {
+  display: flex;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 18px;
+}
+
+.check-editor__header .photo-viewer__close {
+  position: static;
+  flex: 0 0 auto;
+}
+
+.check-editor__header .eyebrow {
+  color: var(--brand-dark);
+}
+
+.check-editor__header h2 {
+  margin-bottom: 4px;
+  font-size: clamp(1.6rem, 3vw, 2.2rem);
+}
+
+.check-editor__header p:not(.eyebrow) {
+  margin-bottom: 0;
+  color: var(--muted);
+}
+
+.editor-photos {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 12px;
+  margin-bottom: 18px;
+}
+
+.editor-photo {
+  display: grid;
+  gap: 8px;
+  padding: 9px;
+  border: 1px solid rgba(166, 181, 187, 0.22);
+  border-radius: 12px;
+  background: #ffffff;
+}
+
+.editor-photo img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: 10px;
+  cursor: zoom-in;
+}
+
+.editor-photo span {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 780;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.editor-photo button {
+  min-height: 30px;
+  border: 0;
+  border-radius: 8px;
+  background: rgba(138, 53, 29, 0.08);
+  color: #8a351d;
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 850;
+}
+
+.editor-upload {
+  margin-bottom: 12px;
+  color: var(--muted);
+}
+
+.editor-upload input {
+  border-color: transparent;
+  background: #eef4f4;
+  color: var(--text);
+}
+
+.editor-empty {
+  grid-column: 1 / -1;
 }
 
 @media (max-width: 1150px) {
