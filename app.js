@@ -665,7 +665,7 @@ function toExportCheck(check) {
   };
 }
 
-async function addCheckPhotosToZip(zip, check, exportErrors) {
+async function addCheckPhotosToZip(zip, check, exportState) {
   const folderPath = [
     "photos",
     slugify(check.country || "onbekend-land"),
@@ -675,18 +675,21 @@ async function addCheckPhotosToZip(zip, check, exportErrors) {
   ].join("/");
 
   for (const [index, photo] of (check.photos || []).entries()) {
+    exportState.done += 1;
+    downloadZipButton.textContent = `Foto ${exportState.done}/${exportState.total}`;
+
     try {
-      const blob = await photoToBlob(photo);
+      const blob = await withTimeout(photoToBlob(photo), 15000, "Foto downloaden duurde te lang");
       if (!blob) {
-        exportErrors.push(`${check.chain} / ${check.location}: ${photo.name || `foto ${index + 1}`} kon niet worden gevonden.`);
+        exportState.errors.push(`${check.chain} / ${check.location}: ${photo.name || `foto ${index + 1}`} kon niet worden gevonden.`);
         continue;
       }
       const extension = getPhotoExtension(photo, blob);
       const baseName = stripExtension(photo.name) || `foto-${index + 1}`;
-      zip.file(`${folderPath}/${slugify(baseName)}${extension}`, blob);
+      zip.file(`${folderPath}/${slugify(baseName)}${extension}`, blob, { compression: "STORE" });
     } catch (error) {
       console.error(error);
-      exportErrors.push(`${check.chain} / ${check.location}: ${photo.name || `foto ${index + 1}`} kon niet worden toegevoegd.`);
+      exportState.errors.push(`${check.chain} / ${check.location}: ${photo.name || `foto ${index + 1}`} kon niet worden toegevoegd.`);
     }
   }
 }
@@ -699,6 +702,15 @@ async function photoToBlob(photo) {
   const response = await fetch(photo.url);
   if (!response.ok) throw new Error(`Foto niet bereikbaar: ${photo.name}`);
   return response.blob();
+}
+
+function withTimeout(promise, milliseconds, message) {
+  return Promise.race([
+    promise,
+    new Promise((_, reject) => {
+      window.setTimeout(() => reject(new Error(message)), milliseconds);
+    }),
+  ]);
 }
 
 function dataUrlToBlob(dataUrl) {
@@ -796,23 +808,25 @@ async function exportChecksZip() {
 
   try {
     const zip = new JSZip();
-    const exportErrors = [];
+    const photoTotal = selectedChecks.reduce((total, check) => total + (check.photos || []).length, 0);
+    const exportState = { done: 0, errors: [], total: photoTotal };
     const cleanChecks = selectedChecks.map(toExportCheck);
     zip.file("storechecks.json", JSON.stringify(cleanChecks, null, 2));
 
     for (const check of selectedChecks) {
-      await addCheckPhotosToZip(zip, check, exportErrors);
+      await addCheckPhotosToZip(zip, check, exportState);
     }
 
-    if (exportErrors.length) {
-      zip.file("export-waarschuwingen.txt", exportErrors.join("\n"));
+    if (exportState.errors.length) {
+      zip.file("export-waarschuwingen.txt", exportState.errors.join("\n"));
     }
 
-    const blob = await zip.generateAsync({ type: "blob" });
+    downloadZipButton.textContent = "ZIP afronden...";
+    const blob = await zip.generateAsync({ type: "blob", compression: "STORE", streamFiles: true });
     downloadBlob(blob, `${getExportFileName()}.zip`);
     exportMenu.hidden = true;
-    if (exportErrors.length) {
-      alert(`ZIP gemaakt, maar ${exportErrors.length} foto${exportErrors.length === 1 ? "" : "'s"} konden niet worden toegevoegd. Zie export-waarschuwingen.txt in de ZIP.`);
+    if (exportState.errors.length) {
+      alert(`ZIP gemaakt, maar ${exportState.errors.length} foto${exportState.errors.length === 1 ? "" : "'s"} konden niet worden toegevoegd. Zie export-waarschuwingen.txt in de ZIP.`);
     }
   } catch (error) {
     console.error(error);
