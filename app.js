@@ -50,6 +50,10 @@ const clearButton = document.querySelector("#clearButton");
 const visitDate = document.querySelector("#visitDate");
 const photoDate = document.querySelector("#photoDate");
 const syncStatus = document.querySelector("#syncStatus");
+const totalChecks = document.querySelector("#totalChecks");
+const totalPhotos = document.querySelector("#totalPhotos");
+const totalCountries = document.querySelector("#totalCountries");
+const latestVisit = document.querySelector("#latestVisit");
 
 let checks = [];
 let firebase = null;
@@ -296,6 +300,7 @@ function renderChecks() {
   const filtered = checks.filter(matchesFilters);
   checksEl.innerHTML = "";
   summary.textContent = `${checks.length} opgeslagen check${checks.length === 1 ? "" : "s"} - ${filtered.length} zichtbaar`;
+  renderStats();
 
   if (!filtered.length) {
     const empty = document.createElement("p");
@@ -326,6 +331,21 @@ function renderChecks() {
 
     checksEl.append(card);
   });
+}
+
+function renderStats() {
+  const photoCount = checks.reduce((total, check) => total + (check.photos || []).length, 0);
+  const countries = new Set(checks.map((check) => check.country).filter(Boolean));
+  const latest = checks
+    .map((check) => check.visitDate)
+    .filter(Boolean)
+    .sort()
+    .at(-1);
+
+  totalChecks.textContent = checks.length;
+  totalPhotos.textContent = photoCount;
+  totalCountries.textContent = countries.size;
+  latestVisit.textContent = latest ? formatShortDate(latest) : "-";
 }
 
 function matchesFilters(check) {
@@ -425,4 +445,8 @@ async function importChecks(event) {
 function formatDate(value) {
   if (!value) return "-";
   return new Intl.DateTimeFormat("nl-NL", { dateStyle: "medium" }).format(new Date(`${value}T00:00:00`));
+}
+
+function formatShortDate(value) {
+  return new Intl.DateTimeFormat("nl-NL", { day: "2-digit", month: "short" }).format(new Date(`${value}T00:00:00`));
 }

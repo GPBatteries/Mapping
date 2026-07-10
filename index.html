@@ -7,12 +7,18 @@
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
+    <div class="app-shell">
     <header class="app-header">
       <div>
-        <p class="eyebrow">Italie & Frankrijk</p>
-        <h1>Storechecks</h1>
+        <p class="brand-mark">Storechecks</p>
         <p id="syncStatus" class="sync-status">Firebase wordt geladen...</p>
       </div>
+      <nav class="top-nav" aria-label="Dashboard">
+        <span class="active">Dashboard</span>
+        <span>Winkels</span>
+        <span>Foto's</span>
+        <span>Rapport</span>
+      </nav>
       <div class="header-actions">
         <div id="userBadge" class="user-badge" hidden></div>
         <button class="text-button" id="loginButtonHeader" type="button" hidden>Inloggen</button>
@@ -30,7 +36,7 @@
     <section id="loginPortal" class="login-portal" hidden>
       <div class="login-panel">
         <p class="eyebrow">Beveiligde toegang</p>
-        <h2>Log in om storechecks te beheren</h2>
+        <h2>Welkom terug</h2>
         <p>Je foto's en winkelbezoeken worden na het inloggen opgeslagen in Firebase en zijn daarna beschikbaar op je andere apparaten.</p>
         <button class="primary-button" id="loginButton" type="button">Inloggen met Google</button>
       </div>
@@ -38,7 +44,9 @@
 
     <main id="appLayout" class="layout" hidden>
       <section class="entry-panel" aria-labelledby="entryTitle">
-        <h2 id="entryTitle">Nieuwe check</h2>
+        <p class="panel-kicker">Italie & Frankrijk</p>
+        <h1 id="entryTitle">Nieuwe storecheck</h1>
+        <p class="panel-intro">Leg per keten en filiaal vast wat je ziet in het schap.</p>
         <form id="checkForm">
           <div class="field-group two">
             <label>
@@ -100,6 +108,29 @@
       </section>
 
       <section class="collection" aria-labelledby="collectionTitle">
+        <div class="stat-grid" aria-label="Samenvatting">
+          <article class="stat-card">
+            <p>Checks totaal</p>
+            <strong id="totalChecks">0</strong>
+            <span class="trend">Live</span>
+          </article>
+          <article class="stat-card">
+            <p>Foto's totaal</p>
+            <strong id="totalPhotos">0</strong>
+            <span class="trend">Storage</span>
+          </article>
+          <article class="stat-card">
+            <p>Landen</p>
+            <strong id="totalCountries">0</strong>
+            <span class="trend">Actief</span>
+          </article>
+          <article class="stat-card">
+            <p>Laatste bezoek</p>
+            <strong id="latestVisit">-</strong>
+            <span class="trend">Datum</span>
+          </article>
+        </div>
+
         <div class="collection-header">
           <div>
             <h2 id="collectionTitle">Bezoeken</h2>
