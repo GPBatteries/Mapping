@@ -24,6 +24,7 @@ import {
   ref,
   uploadBytes,
 } from "https://www.gstatic.com/firebasejs/12.15.0/firebase-storage.js";
+import JSZip from "https://cdn.jsdelivr.net/npm/jszip@3.10.1/+esm";
 import { firebaseConfig } from "./firebase-config.js";
 
 const STORAGE_KEY = "storechecks.v1";
@@ -43,12 +44,15 @@ const template = document.querySelector("#checkTemplate");
 const summary = document.querySelector("#summary");
 const searchFilter = document.querySelector("#searchFilter");
 const countryFilter = document.querySelector("#countryFilter");
-const categoryFilter = document.querySelector("#categoryFilter");
 const exportButton = document.querySelector("#exportButton");
+const exportMenu = document.querySelector("#exportMenu");
+const exportScope = document.querySelector("#exportScope");
+const exportValue = document.querySelector("#exportValue");
+const exportValueLabel = document.querySelector("#exportValueLabel");
+const downloadZipButton = document.querySelector("#downloadZipButton");
 const importInput = document.querySelector("#importInput");
 const clearButton = document.querySelector("#clearButton");
 const visitDate = document.querySelector("#visitDate");
-const photoDate = document.querySelector("#photoDate");
 const syncStatus = document.querySelector("#syncStatus");
 const totalChecks = document.querySelector("#totalChecks");
 const totalPhotos = document.querySelector("#totalPhotos");
@@ -62,7 +66,6 @@ let unsubscribeChecks = null;
 
 const today = new Date().toISOString().slice(0, 10);
 visitDate.value = today;
-photoDate.value = today;
 
 loginButton.addEventListener("click", login);
 loginButtonHeader.addEventListener("click", login);
@@ -71,10 +74,12 @@ photoInput.addEventListener("change", renderPreview);
 form.addEventListener("submit", saveCheck);
 searchFilter.addEventListener("input", renderChecks);
 countryFilter.addEventListener("change", renderChecks);
-categoryFilter.addEventListener("change", renderChecks);
-exportButton.addEventListener("click", exportChecks);
+exportButton.addEventListener("click", toggleExportMenu);
+exportScope.addEventListener("change", renderExportOptions);
+downloadZipButton.addEventListener("click", exportChecksZip);
 importInput.addEventListener("change", importChecks);
 clearButton.addEventListener("click", clearChecks);
+document.addEventListener("click", closeExportMenu);
 
 startApp();
 
@@ -144,6 +149,7 @@ function showLogin() {
   logoutButton.hidden = true;
   userBadge.hidden = true;
   exportButton.hidden = true;
+  exportMenu.hidden = true;
   importInput.closest("label").hidden = true;
   setStatus("Niet ingelogd");
 }
@@ -156,6 +162,7 @@ function showApp(user) {
   userBadge.hidden = !user;
   exportButton.hidden = false;
   importInput.closest("label").hidden = false;
+  renderExportOptions();
 
   if (user) {
     userBadge.textContent = user.email || user.displayName || "Ingelogd";
@@ -230,8 +237,6 @@ async function saveCheck(event) {
       country: data.get("country"),
       location: data.get("location").trim(),
       visitDate: data.get("visitDate"),
-      photoDate: data.get("photoDate"),
-      category: data.get("category"),
       notes: data.get("notes").trim(),
       createdAt: new Date().toISOString(),
     };
@@ -254,7 +259,6 @@ async function saveCheck(event) {
 
     form.reset();
     visitDate.value = today;
-    photoDate.value = today;
     preview.innerHTML = "";
   } catch (error) {
     console.error(error);
@@ -285,7 +289,7 @@ function fileToLocalPhoto(file) {
 
 function renderCountryFilter() {
   const selected = countryFilter.value;
-  const countries = [...new Set(checks.map((check) => check.country).filter(Boolean))].sort();
+  const countries = getCountries();
   countryFilter.innerHTML = '<option value="">Alle landen</option>';
   countries.forEach((country) => {
     const option = document.createElement("option");
@@ -296,11 +300,28 @@ function renderCountryFilter() {
   countryFilter.value = selected;
 }
 
+function renderExportOptions() {
+  const scope = exportScope.value;
+  const values = scope === "country" ? getCountries() : scope === "year" ? getYears() : [];
+
+  exportValue.innerHTML = "";
+  values.forEach((value) => {
+    const option = document.createElement("option");
+    option.value = value;
+    option.textContent = value;
+    exportValue.append(option);
+  });
+
+  exportValueLabel.hidden = scope === "all";
+  downloadZipButton.disabled = scope !== "all" && !values.length;
+}
+
 function renderChecks() {
   const filtered = checks.filter(matchesFilters);
   checksEl.innerHTML = "";
   summary.textContent = `${checks.length} opgeslagen check${checks.length === 1 ? "" : "s"} - ${filtered.length} zichtbaar`;
   renderStats();
+  renderExportOptions();
 
   if (!filtered.length) {
     const empty = document.createElement("p");
@@ -315,9 +336,8 @@ function renderChecks() {
     card.querySelector(".country").textContent = check.country;
     card.querySelector("h3").textContent = check.chain;
     card.querySelector(".location").textContent = check.location;
-    card.querySelector(".visit-date").textContent = formatDate(check.visitDate);
-    card.querySelector(".photo-date").textContent = formatDate(check.photoDate);
-    card.querySelector(".category").textContent = check.category;
+    card.querySelector(".visit-date").textContent = formatDate(getCheckDate(check));
+    card.querySelector(".photo-count").textContent = `${(check.photos || []).length}`;
     card.querySelector(".notes").textContent = check.notes || "Geen notities.";
     card.querySelector(".delete-button").addEventListener("click", () => deleteCheck(check.id));
 
@@ -337,7 +357,7 @@ function renderStats() {
   const photoCount = checks.reduce((total, check) => total + (check.photos || []).length, 0);
   const countries = new Set(checks.map((check) => check.country).filter(Boolean));
   const latest = checks
-    .map((check) => check.visitDate)
+    .map(getCheckDate)
     .filter(Boolean)
     .sort()
     .at(-1);
@@ -350,12 +370,132 @@ function renderStats() {
 
 function matchesFilters(check) {
   const queryText = searchFilter.value.trim().toLowerCase();
-  const searchable = [check.chain, check.country, check.location, check.category, check.notes].join(" ").toLowerCase();
+  const searchable = [check.chain, check.country, check.location, check.notes].join(" ").toLowerCase();
   return (
     (!queryText || searchable.includes(queryText)) &&
-    (!countryFilter.value || check.country === countryFilter.value) &&
-    (!categoryFilter.value || check.category === categoryFilter.value)
+    (!countryFilter.value || check.country === countryFilter.value)
   );
+}
+
+function getSelectedExportChecks() {
+  if (exportScope.value === "country") {
+    return checks.filter((check) => check.country === exportValue.value);
+  }
+
+  if (exportScope.value === "year") {
+    return checks.filter((check) => getYear(getCheckDate(check)) === exportValue.value);
+  }
+
+  return checks;
+}
+
+function getExportFileName() {
+  if (exportScope.value === "country") return `storechecks-${slugify(exportValue.value)}`;
+  if (exportScope.value === "year") return `storechecks-${exportValue.value}`;
+  return `storechecks-alles-${today}`;
+}
+
+function getCountries() {
+  return [...new Set(checks.map((check) => check.country).filter(Boolean))].sort();
+}
+
+function getYears() {
+  return [...new Set(checks.map((check) => getYear(getCheckDate(check))).filter(Boolean))].sort().reverse();
+}
+
+function getYear(value) {
+  return value ? String(value).slice(0, 4) : "";
+}
+
+function getCheckDate(check) {
+  return check.visitDate || check.photoDate || "";
+}
+
+function toExportCheck(check) {
+  return {
+    id: check.id,
+    chain: check.chain,
+    country: check.country,
+    location: check.location,
+    date: getCheckDate(check),
+    notes: check.notes || "",
+    createdAt: check.createdAt || "",
+    photos: (check.photos || []).map((photo) => ({
+      name: photo.name,
+      type: photo.type,
+      path: photo.path || "",
+      url: photo.url || "",
+    })),
+  };
+}
+
+async function addCheckPhotosToZip(zip, check) {
+  const folderPath = [
+    "photos",
+    slugify(check.country || "onbekend-land"),
+    slugify(check.chain || "onbekende-keten"),
+    slugify(check.location || "onbekend-filiaal"),
+    getCheckDate(check) || "zonder-datum",
+  ].join("/");
+
+  for (const [index, photo] of (check.photos || []).entries()) {
+    const blob = await photoToBlob(photo);
+    if (!blob) continue;
+    const extension = getPhotoExtension(photo, blob);
+    const baseName = stripExtension(photo.name) || `foto-${index + 1}`;
+    zip.file(`${folderPath}/${slugify(baseName)}${extension}`, blob);
+  }
+}
+
+async function photoToBlob(photo) {
+  if (photo.data) return dataUrlToBlob(photo.data);
+  if (!photo.url) return null;
+
+  const response = await fetch(photo.url);
+  if (!response.ok) throw new Error(`Foto niet bereikbaar: ${photo.name}`);
+  return response.blob();
+}
+
+function dataUrlToBlob(dataUrl) {
+  const [header, base64] = dataUrl.split(",");
+  const mimeMatch = header.match(/data:(.*?);base64/);
+  const mimeType = mimeMatch ? mimeMatch[1] : "application/octet-stream";
+  const binary = atob(base64);
+  const bytes = new Uint8Array(binary.length);
+  for (let index = 0; index < binary.length; index += 1) {
+    bytes[index] = binary.charCodeAt(index);
+  }
+  return new Blob([bytes], { type: mimeType });
+}
+
+function getPhotoExtension(photo, blob) {
+  const existing = photo.name && photo.name.match(/\.[a-z0-9]+$/i);
+  if (existing) return existing[0].toLowerCase();
+  if (blob.type === "image/png") return ".png";
+  if (blob.type === "image/webp") return ".webp";
+  return ".jpg";
+}
+
+function stripExtension(name = "") {
+  return name.replace(/\.[a-z0-9]+$/i, "");
+}
+
+function slugify(value) {
+  return String(value || "")
+    .normalize("NFD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, "-")
+    .replace(/^-+|-+$/g, "")
+    .slice(0, 80) || "onbekend";
+}
+
+function downloadBlob(blob, fileName) {
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(blob);
+  link.download = fileName;
+  link.click();
+  URL.revokeObjectURL(link.href);
 }
 
 async function deleteCheck(id) {
@@ -399,13 +539,47 @@ async function clearChecks() {
   renderChecks();
 }
 
-function exportChecks() {
-  const blob = new Blob([JSON.stringify(checks, null, 2)], { type: "application/json" });
-  const link = document.createElement("a");
-  link.href = URL.createObjectURL(blob);
-  link.download = `storechecks-${today}.json`;
-  link.click();
-  URL.revokeObjectURL(link.href);
+function toggleExportMenu(event) {
+  event.stopPropagation();
+  exportMenu.hidden = !exportMenu.hidden;
+  renderExportOptions();
+}
+
+function closeExportMenu(event) {
+  if (exportMenu.hidden || event.target.closest(".export-control")) return;
+  exportMenu.hidden = true;
+}
+
+async function exportChecksZip() {
+  const selectedChecks = getSelectedExportChecks();
+  if (!selectedChecks.length) {
+    alert("Er zijn geen storechecks voor deze export.");
+    return;
+  }
+
+  const originalText = downloadZipButton.textContent;
+  downloadZipButton.disabled = true;
+  downloadZipButton.textContent = "ZIP maken...";
+
+  try {
+    const zip = new JSZip();
+    const cleanChecks = selectedChecks.map(toExportCheck);
+    zip.file("storechecks.json", JSON.stringify(cleanChecks, null, 2));
+
+    for (const check of selectedChecks) {
+      await addCheckPhotosToZip(zip, check);
+    }
+
+    const blob = await zip.generateAsync({ type: "blob" });
+    downloadBlob(blob, `${getExportFileName()}.zip`);
+    exportMenu.hidden = true;
+  } catch (error) {
+    console.error(error);
+    alert("Exporteren is niet gelukt. Controleer of de foto's nog toegankelijk zijn.");
+  } finally {
+    downloadZipButton.disabled = false;
+    downloadZipButton.textContent = originalText;
+  }
 }
 
 async function importChecks(event) {
