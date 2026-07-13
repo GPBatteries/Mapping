@@ -32,6 +32,13 @@ const firebaseConfig = firebaseConfigModule.firebaseConfig || window.firebaseCon
 const STORAGE_KEY = "storechecks.v1";
 const COLLECTION_NAME = "storechecks";
 
+// Fotokwaliteit. FULL_MAX is de versie die je in de ZIP-export krijgt.
+// Zet FULL_MAX op 0 als je originelen in volle resolutie wilt bewaren.
+const THUMB_MAX = 400;
+const FULL_MAX = 1600;
+const JPEG_QUALITY = 0.82;
+const CACHE_CONTROL = "public, max-age=31536000";
+
 const appLayout = document.querySelector("#appLayout");
 const loginPortal = document.querySelector("#loginPortal");
 const loginButton = document.querySelector("#loginButton");
@@ -50,6 +57,7 @@ const storeChecks = document.querySelector("#storeChecks");
 const template = document.querySelector("#checkTemplate");
 const summary = document.querySelector("#summary");
 const storesSummary = document.querySelector("#storesSummary");
+const optimizeButton = document.querySelector("#optimizeButton");
 const exportButton = document.querySelector("#exportButton");
 const exportDialog = document.querySelector("#exportDialog");
 const exportClose = document.querySelector("#exportClose");
@@ -105,6 +113,7 @@ logoutButton.addEventListener("click", logout);
 navButtons.forEach((button) => button.addEventListener("click", () => setView(button.dataset.view)));
 photoInput.addEventListener("change", renderPreview);
 form.addEventListener("submit", saveCheck);
+optimizeButton.addEventListener("click", optimizeExistingPhotos);
 exportButton.addEventListener("click", openExportDialog);
 exportClose.addEventListener("click", closeExportDialog);
 exportDialog.addEventListener("click", (event) => {
@@ -325,13 +334,86 @@ async function saveCheck(event) {
   }
 }
 
+function photoThumb(photo) {
+  return photo.thumbUrl || photo.url || photo.data || "";
+}
+
+function photoFull(photo) {
+  return photo.url || photo.data || "";
+}
+
+function outputMime(type) {
+  return type === "image/png" ? "image/png" : "image/jpeg";
+}
+
+async function loadBitmap(source) {
+  return createImageBitmap(source, { imageOrientation: "from-image" });
+}
+
+function resizeToBlob(bitmap, maxSize, mimeType) {
+  const longest = Math.max(bitmap.width, bitmap.height);
+  const scale = maxSize > 0 ? Math.min(1, maxSize / longest) : 1;
+  const width = Math.max(1, Math.round(bitmap.width * scale));
+  const height = Math.max(1, Math.round(bitmap.height * scale));
+
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d");
+  context.imageSmoothingQuality = "high";
+  context.drawImage(bitmap, 0, 0, width, height);
+
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(
+      (blob) => (blob ? resolve(blob) : reject(new Error("Foto verkleinen is mislukt."))),
+      mimeType,
+      JPEG_QUALITY,
+    );
+  });
+}
+
 async function uploadPhoto(file, checkId) {
   const safeName = file.name.replace(/[^\w.-]/g, "_");
-  const path = `${COLLECTION_NAME}/${currentUser.uid}/${checkId}/${Date.now()}-${safeName}`;
-  const storageRef = ref(firebase.storage, path);
-  await uploadBytes(storageRef, file, { contentType: file.type });
-  const url = await getDownloadURL(storageRef);
-  return { name: file.name, type: file.type, path, url };
+  const stamp = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+  const basePath = `${COLLECTION_NAME}/${currentUser.uid}/${checkId}/${stamp}`;
+
+  let bitmap = null;
+  try {
+    bitmap = await loadBitmap(file);
+  } catch (error) {
+    console.warn("Verkleinen niet mogelijk, origineel wordt geupload:", error);
+  }
+
+  if (!bitmap) {
+    const storageRef = ref(firebase.storage, `${basePath}-${safeName}`);
+    await uploadBytes(storageRef, file, { contentType: file.type, cacheControl: CACHE_CONTROL });
+    return { name: file.name, type: file.type, path: storageRef.fullPath, url: await getDownloadURL(storageRef), size: file.size };
+  }
+
+  const mime = outputMime(file.type);
+  const fullBlob = await resizeToBlob(bitmap, FULL_MAX, mime);
+  const thumbBlob = await resizeToBlob(bitmap, THUMB_MAX, mime);
+  bitmap.close();
+
+  const fullRef = ref(firebase.storage, `${basePath}-${safeName}`);
+  const thumbRef = ref(firebase.storage, `${basePath}-thumb-${safeName}`);
+
+  await Promise.all([
+    uploadBytes(fullRef, fullBlob, { contentType: mime, cacheControl: CACHE_CONTROL }),
+    uploadBytes(thumbRef, thumbBlob, { contentType: mime, cacheControl: CACHE_CONTROL }),
+  ]);
+
+  const [url, thumbUrl] = await Promise.all([getDownloadURL(fullRef), getDownloadURL(thumbRef)]);
+
+  return {
+    name: file.name,
+    type: mime,
+    path: fullRef.fullPath,
+    url,
+    thumbPath: thumbRef.fullPath,
+    thumbUrl,
+    size: fullBlob.size,
+  };
 }
 
 function fileToLocalPhoto(file) {
@@ -496,6 +578,7 @@ function updateExportSummary() {
 
 function renderChecks() {
   renderStats();
+  renderOptimizeButton();
   renderDashboardChecks();
   renderStores();
   if (editingCheckId && !checkEditor.hidden) renderCheckEditor();
@@ -562,7 +645,7 @@ function renderCheckCards(container, list, emptyText) {
 
     visiblePhotos.forEach((photo, index) => {
       const img = document.createElement("img");
-      img.src = photo.url || photo.data;
+      img.src = photoThumb(photo);
       img.alt = `${check.chain} - ${photo.name}`;
       img.loading = "lazy";
       img.tabIndex = 0;
@@ -637,7 +720,8 @@ function renderCheckEditor() {
     item.className = "editor-photo";
 
     const img = document.createElement("img");
-    img.src = photo.url || photo.data;
+    img.src = photoThumb(photo);
+    img.loading = "lazy";
     img.alt = `${check.chain} - ${photo.name}`;
     img.addEventListener("click", () => openPhotoViewer(check.photos || [], index, check.chain));
 
@@ -687,8 +771,12 @@ async function removePhotoFromEditingCheck(photoIndex) {
   if (!photo || !confirm("Deze foto verwijderen?")) return;
 
   try {
-    if (firebase && photo.path) {
-      await deleteObject(ref(firebase.storage, photo.path)).catch(() => null);
+    if (firebase) {
+      await Promise.all(
+        [photo.path, photo.thumbPath]
+          .filter(Boolean)
+          .map((path) => deleteObject(ref(firebase.storage, path)).catch(() => null)),
+      );
     }
     const updatedPhotos = (check.photos || []).filter((_, index) => index !== photoIndex);
     await saveCheckPhotos(check.id, updatedPhotos);
@@ -715,7 +803,7 @@ async function saveCheckPhotos(checkId, photos) {
 
 function openPhotoViewer(photos, startIndex = 0, checkName = "") {
   viewerPhotos = (photos || []).map((photo, index) => ({
-    src: photo.url || photo.data,
+    src: photoFull(photo),
     caption: `${checkName} - ${photo.name || `Foto ${index + 1}`}`,
   })).filter((photo) => photo.src);
   viewerPhotoIndex = Math.min(Math.max(startIndex, 0), Math.max(viewerPhotos.length - 1, 0));
@@ -790,6 +878,99 @@ function renderStores() {
 
   const selectedStore = stores.find((store) => store.key === selectedStoreKey);
   renderCheckCards(storeChecks, selectedStore ? selectedStore.checks : [], "Geen checks voor deze winkel.");
+}
+
+function countLegacyPhotos() {
+  return checks.reduce(
+    (total, check) => total + (check.photos || []).filter((photo) => photo.path && !photo.thumbPath).length,
+    0,
+  );
+}
+
+function renderOptimizeButton() {
+  const legacy = countLegacyPhotos();
+  optimizeButton.hidden = !firebase || !currentUser || legacy === 0;
+  optimizeButton.textContent = `Optimaliseer ${legacy} foto${legacy === 1 ? "" : "'s"}`;
+}
+
+async function optimizeExistingPhotos() {
+  const targets = checks.filter((check) => (check.photos || []).some((photo) => photo.path && !photo.thumbPath));
+  if (!targets.length) return;
+
+  const total = countLegacyPhotos();
+  if (!confirm(`${total} foto('s) worden verkleind en opnieuw opgeslagen. Dit kan even duren. Doorgaan?`)) return;
+
+  optimizeButton.disabled = true;
+  let done = 0;
+  let failed = 0;
+
+  try {
+    for (const check of targets) {
+      const updatedPhotos = [];
+      let changed = false;
+
+      for (const photo of check.photos || []) {
+        if (!photo.path || photo.thumbPath) {
+          updatedPhotos.push(photo);
+          continue;
+        }
+
+        done += 1;
+        optimizeButton.textContent = `Optimaliseren ${done}/${total}`;
+        await waitForPaint();
+
+        try {
+          updatedPhotos.push(await optimizeSinglePhoto(photo));
+          changed = true;
+        } catch (error) {
+          console.error(error);
+          failed += 1;
+          updatedPhotos.push(photo);
+        }
+      }
+
+      if (changed) await updateDoc(doc(firebase.db, COLLECTION_NAME, check.id), { photos: updatedPhotos });
+    }
+
+    alert(failed ? `Klaar, maar ${failed} foto('s) zijn niet gelukt.` : "Alle foto's zijn geoptimaliseerd.");
+  } catch (error) {
+    console.error(error);
+    alert(`Optimaliseren is niet gelukt: ${error.message || error}`);
+  } finally {
+    optimizeButton.disabled = false;
+    renderOptimizeButton();
+  }
+}
+
+async function optimizeSinglePhoto(photo) {
+  const blob = await photoToBlob(photo);
+  if (!blob) throw new Error(`${photo.name || "foto"} kon niet worden opgehaald.`);
+
+  const bitmap = await loadBitmap(blob);
+  const mime = outputMime(photo.type || blob.type);
+  const fullBlob = await resizeToBlob(bitmap, FULL_MAX, mime);
+  const thumbBlob = await resizeToBlob(bitmap, THUMB_MAX, mime);
+  bitmap.close();
+
+  const thumbPath = photo.path.replace(/([^/]+)$/, "thumb-$1");
+  const fullRef = ref(firebase.storage, photo.path);
+  const thumbRef = ref(firebase.storage, thumbPath);
+
+  await Promise.all([
+    uploadBytes(fullRef, fullBlob, { contentType: mime, cacheControl: CACHE_CONTROL }),
+    uploadBytes(thumbRef, thumbBlob, { contentType: mime, cacheControl: CACHE_CONTROL }),
+  ]);
+
+  const [url, thumbUrl] = await Promise.all([getDownloadURL(fullRef), getDownloadURL(thumbRef)]);
+
+  return {
+    ...photo,
+    type: mime,
+    url,
+    thumbPath: thumbRef.fullPath,
+    thumbUrl,
+    size: fullBlob.size,
+  };
 }
 
 function renderStats() {
@@ -1044,13 +1225,20 @@ function escapeHtml(value) {
 async function deleteCheck(id) {
   const check = checks.find((item) => item.id === id);
   if (!check) return;
+
+  const photoCount = (check.photos || []).length;
+  const label = [check.chain, check.location].filter(Boolean).join(" - ") || "Deze storecheck";
+  const message = `${label} verwijderen?\n\n${photoCount} foto${photoCount === 1 ? "" : "'s"} worden ook definitief verwijderd. Dit kan niet ongedaan gemaakt worden.`;
+  if (!confirm(message)) return;
+
   if (editingCheckId === id) closeCheckEditor();
 
   if (firebase) {
     await deleteDoc(doc(firebase.db, COLLECTION_NAME, id));
     const photoDeletes = (check.photos || [])
-      .filter((photo) => photo.path)
-      .map((photo) => deleteObject(ref(firebase.storage, photo.path)).catch(() => null));
+      .flatMap((photo) => [photo.path, photo.thumbPath])
+      .filter(Boolean)
+      .map((path) => deleteObject(ref(firebase.storage, path)).catch(() => null));
     await Promise.all(photoDeletes);
     return;
   }
