@@ -19,6 +19,7 @@ import {
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js";
 import {
   deleteObject,
+  getBlob,
   getDownloadURL,
   getStorage,
   ref,
@@ -723,7 +724,8 @@ async function addCheckPhotosToZip(zip, check, exportState) {
       }
       const extension = getPhotoExtension(photo, blob);
       const baseName = stripExtension(photo.name) || `foto-${index + 1}`;
-      zip.file(`${folderPath}/${slugify(baseName)}${extension}`, blob, { compression: "STORE" });
+      const fileName = `${String(index + 1).padStart(2, "0")}-${slugify(baseName)}${extension}`;
+      zip.file(`${folderPath}/${fileName}`, blob, { compression: "STORE" });
     } catch (error) {
       console.error(error);
       exportState.errors.push(`${check.chain} / ${check.location}: ${photo.name || `foto ${index + 1}`} kon niet worden toegevoegd.`);
@@ -733,11 +735,29 @@ async function addCheckPhotosToZip(zip, check, exportState) {
 
 async function photoToBlob(photo) {
   if (photo.data) return dataUrlToBlob(photo.data);
+
   const url = photo.url || (firebase && photo.path
     ? await withPromiseTimeout(getDownloadURL(ref(firebase.storage, photo.path)), 8000, "Downloadlink ophalen duurde te lang")
     : "");
-  if (!url) return null;
-  return fetchBlobWithTimeout(url, 12000, photo.name || "foto");
+
+  if (url) {
+    try {
+      return await fetchBlobWithTimeout(url, 20000, photo.name || "foto");
+    } catch (error) {
+      console.warn("Fetch van foto mislukt, probeer Firebase SDK:", error);
+    }
+  }
+
+  if (firebase && photo.path) {
+    try {
+      return await withPromiseTimeout(getBlob(ref(firebase.storage, photo.path)), 20000, "Foto ophalen duurde te lang");
+    } catch (error) {
+      console.error(error);
+      throw new Error(`${photo.name || "foto"} kon niet worden opgehaald (mogelijk CORS op de storage bucket).`);
+    }
+  }
+
+  return null;
 }
 
 function withPromiseTimeout(promise, milliseconds, message) {
@@ -803,11 +823,18 @@ function slugify(value) {
 }
 
 function downloadBlob(blob, fileName) {
+  const objectUrl = URL.createObjectURL(blob);
   const link = document.createElement("a");
-  link.href = URL.createObjectURL(blob);
+  link.href = objectUrl;
   link.download = fileName;
+  link.rel = "noopener";
+  link.style.display = "none";
+  document.body.append(link);
   link.click();
-  URL.revokeObjectURL(link.href);
+  window.setTimeout(() => {
+    link.remove();
+    URL.revokeObjectURL(objectUrl);
+  }, 60000);
 }
 
 function escapeHtml(value) {
@@ -857,11 +884,6 @@ async function exportChecksZip() {
     return;
   }
 
-  if (firebase && currentUser) {
-    await startBackendExport();
-    return;
-  }
-
   const originalText = downloadZipButton.textContent;
   downloadZipButton.disabled = true;
   downloadZipButton.textContent = "ZIP voorbereiden...";
@@ -886,7 +908,7 @@ async function exportChecksZip() {
     downloadZipButton.textContent = "ZIP afronden...";
     await waitForPaint();
     const blob = await zip.generateAsync(
-      { type: "blob", compression: "STORE", streamFiles: true },
+      { type: "blob", compression: "STORE" },
       (metadata) => {
         downloadZipButton.textContent = `ZIP ${Math.round(metadata.percent)}%`;
       },
@@ -898,7 +920,7 @@ async function exportChecksZip() {
     }
   } catch (error) {
     console.error(error);
-    alert("Exporteren is niet gelukt. Probeer opnieuw of kies een kleinere selectie.");
+    alert(`Exporteren is niet gelukt: ${error.message || error}`);
   } finally {
     downloadZipButton.disabled = false;
     downloadZipButton.textContent = originalText;
@@ -908,69 +930,6 @@ async function exportChecksZip() {
 async function loadZipLibrary() {
   const module = await import("https://cdn.jsdelivr.net/npm/jszip@3.10.1/+esm");
   return module.default;
-}
-
-async function startBackendExport() {
-  const originalText = downloadZipButton.textContent;
-  downloadZipButton.disabled = true;
-  downloadZipButton.textContent = "Export starten...";
-
-  let unsubscribeExport = null;
-
-  try {
-    const job = await addDoc(collection(firebase.db, "exportJobs"), {
-      ownerUid: currentUser.uid,
-      ownerEmail: currentUser.email || "",
-      scope: exportScope.value,
-      value: exportScope.value === "all" ? "" : exportValue.value,
-      status: "queued",
-      createdAt: new Date().toISOString(),
-    });
-
-    downloadZipButton.textContent = "Export in wachtrij...";
-
-    await new Promise((resolve, reject) => {
-      const timeout = window.setTimeout(() => {
-        reject(new Error("Export duurt te lang. Controleer of de Firebase Cloud Function is gedeployed."));
-      }, 10 * 60 * 1000);
-
-      unsubscribeExport = onSnapshot(doc(firebase.db, "exportJobs", job.id), async (snapshot) => {
-        const data = snapshot.data();
-        if (!data) return;
-
-        if (data.status === "queued") downloadZipButton.textContent = "Export in wachtrij...";
-        if (data.status === "running") downloadZipButton.textContent = data.progressText || "ZIP maken...";
-        if (data.status === "complete") {
-          downloadZipButton.textContent = "Download starten...";
-          const url = await getDownloadURL(ref(firebase.storage, data.storagePath));
-          downloadUrl(url, data.fileName || `${getExportFileName()}.zip`);
-          window.clearTimeout(timeout);
-          resolve();
-        }
-        if (data.status === "error") {
-          window.clearTimeout(timeout);
-          reject(new Error(data.error || "Exporteren is niet gelukt."));
-        }
-      }, reject);
-    });
-
-    exportMenu.hidden = true;
-  } catch (error) {
-    console.error(error);
-    alert(error.message || "Exporteren is niet gelukt.");
-  } finally {
-    if (unsubscribeExport) unsubscribeExport();
-    downloadZipButton.disabled = false;
-    downloadZipButton.textContent = originalText;
-  }
-}
-
-function downloadUrl(url, fileName) {
-  const link = document.createElement("a");
-  link.href = url;
-  link.download = fileName;
-  link.rel = "noopener";
-  link.click();
 }
 
 function waitForPaint() {
