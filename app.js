@@ -480,6 +480,43 @@ async function decodeHeic(file) {
   });
 }
 
+async function convertIfHeic(file) {
+  if (!isHeic(file)) return file;
+  if (convertedFiles.has(file)) return convertedFiles.get(file);
+
+  let blob = null;
+  const problems = [];
+
+  // Route 1: de browser kan HEIC zelf decoderen (Safari, nieuwere Chrome).
+  try {
+    const bitmap = await createImageBitmap(file);
+    blob = await resizeToBlob(bitmap, 0, HEIC_OUTPUT);
+    bitmap.close();
+  } catch (error) {
+    problems.push(`native: ${error.message || error}`);
+  }
+
+  // Route 2: decoderen met libheif (WebAssembly).
+  if (!blob) {
+    try {
+      blob = await decodeHeic(file);
+    } catch (error) {
+      problems.push(`libheif: ${error.message || error}`);
+    }
+  }
+
+  if (!blob) {
+    console.error("HEIC-conversie mislukt", file.name, problems);
+    throw new Error(`${file.name}: ${problems.join(" | ")}`);
+  }
+
+  const extension = HEIC_OUTPUT === "image/png" ? ".png" : ".jpg";
+  const name = (file.name || "foto").replace(/\.(heic|heif)$/i, "") + extension;
+  const converted = new File([blob], name, { type: HEIC_OUTPUT, lastModified: file.lastModified });
+  convertedFiles.set(file, converted);
+  return converted;
+}
+
 async function prepareFiles(files) {
   const prepared = [];
   for (const file of files) {
