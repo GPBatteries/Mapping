@@ -325,21 +325,25 @@ async function renderPreview() {
     preview.append(notice);
   }
 
-  try {
-    const prepared = await prepareFiles(files);
-    preview.innerHTML = "";
-    prepared.forEach((file) => {
-      const img = document.createElement("img");
-      img.alt = file.name;
-      img.src = URL.createObjectURL(file);
-      preview.append(img);
-    });
-  } catch (error) {
-    console.error(error);
-    preview.innerHTML = "";
+  const results = await Promise.allSettled(files.map(convertIfHeic));
+  preview.innerHTML = "";
+
+  const failures = [];
+  results.forEach((result, index) => {
+    if (result.status === "rejected") {
+      failures.push(files[index].name);
+      return;
+    }
+    const img = document.createElement("img");
+    img.alt = result.value.name;
+    img.src = URL.createObjectURL(result.value);
+    preview.append(img);
+  });
+
+  if (failures.length) {
     const failed = document.createElement("p");
     failed.className = "empty";
-    failed.textContent = "Omzetten van HEIC is mislukt. Zet je iPhone op 'Meest compatibel' bij Camera > Indelingen.";
+    failed.textContent = `${failures.length} foto('s) konden niet worden omgezet. Zie de console (F12) voor details.`;
     preview.append(failed);
   }
 }
@@ -446,12 +450,36 @@ async function convertIfHeic(file) {
   if (!isHeic(file)) return file;
   if (convertedFiles.has(file)) return convertedFiles.get(file);
 
-  const convert = await loadHeicConverter();
-  const result = await convert({ blob: file, toType: HEIC_OUTPUT, quality: 0.92 });
-  const blob = Array.isArray(result) ? result[0] : result;
+  let blob = null;
+  const problems = [];
+
+  // Route 1: de browser kan HEIC zelf decoderen (Safari, nieuwere Chrome).
+  try {
+    const bitmap = await createImageBitmap(file);
+    blob = await resizeToBlob(bitmap, 0, HEIC_OUTPUT);
+    bitmap.close();
+  } catch (error) {
+    problems.push(`native: ${error.message || error}`);
+  }
+
+  // Route 2: omzetten met heic2any.
+  if (!blob) {
+    try {
+      const convert = await loadHeicConverter();
+      const result = await convert({ blob: file, toType: HEIC_OUTPUT, quality: 0.92 });
+      blob = Array.isArray(result) ? result[0] : result;
+    } catch (error) {
+      problems.push(`heic2any: ${error.message || error}`);
+    }
+  }
+
+  if (!blob) {
+    console.error("HEIC-conversie mislukt", file.name, problems);
+    throw new Error(`${file.name}: ${problems.join(" | ")}`);
+  }
+
   const extension = HEIC_OUTPUT === "image/png" ? ".png" : ".jpg";
   const name = (file.name || "foto").replace(/\.(heic|heif)$/i, "") + extension;
-
   const converted = new File([blob], name, { type: HEIC_OUTPUT, lastModified: file.lastModified });
   convertedFiles.set(file, converted);
   return converted;
