@@ -51,10 +51,13 @@ const template = document.querySelector("#checkTemplate");
 const summary = document.querySelector("#summary");
 const storesSummary = document.querySelector("#storesSummary");
 const exportButton = document.querySelector("#exportButton");
-const exportMenu = document.querySelector("#exportMenu");
-const exportScope = document.querySelector("#exportScope");
-const exportValue = document.querySelector("#exportValue");
-const exportValueLabel = document.querySelector("#exportValueLabel");
+const exportDialog = document.querySelector("#exportDialog");
+const exportClose = document.querySelector("#exportClose");
+const filterCountries = document.querySelector("#filterCountries");
+const filterStores = document.querySelector("#filterStores");
+const filterYears = document.querySelector("#filterYears");
+const storeSearch = document.querySelector("#storeSearch");
+const exportSummary = document.querySelector("#exportSummary");
 const downloadZipButton = document.querySelector("#downloadZipButton");
 const visitDate = document.querySelector("#visitDate");
 const syncStatus = document.querySelector("#syncStatus");
@@ -86,6 +89,13 @@ let editingCheckId = "";
 let viewerPhotos = [];
 let viewerPhotoIndex = 0;
 
+const GALLERY_LIMIT = 6;
+const exportFilters = {
+  countries: new Set(),
+  stores: new Set(),
+  years: new Set(),
+};
+
 const today = new Date().toISOString().slice(0, 10);
 visitDate.value = today;
 
@@ -95,10 +105,19 @@ logoutButton.addEventListener("click", logout);
 navButtons.forEach((button) => button.addEventListener("click", () => setView(button.dataset.view)));
 photoInput.addEventListener("change", renderPreview);
 form.addEventListener("submit", saveCheck);
-exportButton.addEventListener("click", toggleExportMenu);
-exportScope.addEventListener("change", renderExportOptions);
+exportButton.addEventListener("click", openExportDialog);
+exportClose.addEventListener("click", closeExportDialog);
+exportDialog.addEventListener("click", (event) => {
+  if (event.target === exportDialog) closeExportDialog();
+});
+storeSearch.addEventListener("input", renderStoreFilter);
+document.querySelectorAll("[data-clear]").forEach((button) => {
+  button.addEventListener("click", () => {
+    exportFilters[button.dataset.clear].clear();
+    renderExportFilters();
+  });
+});
 downloadZipButton.addEventListener("click", exportChecksZip);
-document.addEventListener("click", closeExportMenu);
 photoViewerClose.addEventListener("click", closePhotoViewer);
 photoViewerPrev.addEventListener("click", () => showAdjacentPhoto(-1));
 photoViewerNext.addEventListener("click", () => showAdjacentPhoto(1));
@@ -114,6 +133,7 @@ document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
     closePhotoViewer();
     closeCheckEditor();
+    closeExportDialog();
   }
   if (!photoViewer.hidden && event.key === "ArrowLeft") showAdjacentPhoto(-1);
   if (!photoViewer.hidden && event.key === "ArrowRight") showAdjacentPhoto(1);
@@ -190,7 +210,7 @@ function showLogin() {
   logoutButton.hidden = true;
   userBadge.hidden = true;
   exportButton.hidden = true;
-  exportMenu.hidden = true;
+  closeExportDialog();
   setStatus("Niet ingelogd");
 }
 
@@ -201,7 +221,6 @@ function showApp(user) {
   logoutButton.hidden = !firebase;
   userBadge.hidden = !user;
   exportButton.hidden = false;
-  renderExportOptions();
 
   if (user) {
     userBadge.textContent = user.email || user.displayName || "Ingelogd";
@@ -324,28 +343,166 @@ function fileToLocalPhoto(file) {
   });
 }
 
-function renderExportOptions() {
-  const scope = exportScope.value;
-  const values = scope === "country" ? getCountries() : scope === "year" ? getYears() : [];
+function openExportDialog() {
+  pruneExportFilters();
+  renderExportFilters();
+  exportDialog.hidden = false;
+  document.body.classList.add("viewer-open");
+  exportClose.focus();
+}
 
-  exportValue.innerHTML = "";
-  values.forEach((value) => {
-    const option = document.createElement("option");
-    option.value = value;
-    option.textContent = value;
-    exportValue.append(option);
+function closeExportDialog() {
+  if (exportDialog.hidden) return;
+  exportDialog.hidden = true;
+  if (photoViewer.hidden && checkEditor.hidden) document.body.classList.remove("viewer-open");
+}
+
+function pruneExportFilters() {
+  const countries = new Set(getCountries());
+  const stores = new Set(getStores().map((store) => store.key));
+  const years = new Set(getYears());
+
+  [...exportFilters.countries].forEach((value) => {
+    if (!countries.has(value)) exportFilters.countries.delete(value);
+  });
+  [...exportFilters.stores].forEach((value) => {
+    if (!stores.has(value)) exportFilters.stores.delete(value);
+  });
+  [...exportFilters.years].forEach((value) => {
+    if (!years.has(value)) exportFilters.years.delete(value);
+  });
+}
+
+function renderExportFilters() {
+  renderCountryFilter();
+  renderStoreFilter();
+  renderYearFilter();
+  updateExportSummary();
+}
+
+function renderCountryFilter() {
+  const counts = new Map();
+  checks.forEach((check) => {
+    const country = check.country || "Onbekend land";
+    counts.set(country, (counts.get(country) || 0) + 1);
   });
 
-  exportValueLabel.hidden = scope === "all";
-  downloadZipButton.disabled = scope !== "all" && !values.length;
+  renderFilterOptions(filterCountries, getCountries().map((country) => ({
+    value: country,
+    label: country,
+    count: counts.get(country) || 0,
+  })), "countries", "Nog geen landen.");
+}
+
+function renderStoreFilter() {
+  const term = storeSearch.value.trim().toLowerCase();
+  const stores = getStores().filter((store) => {
+    const matchesCountry = !exportFilters.countries.size || exportFilters.countries.has(store.country);
+    const matchesTerm = !term
+      || store.chain.toLowerCase().includes(term)
+      || store.location.toLowerCase().includes(term);
+    return matchesCountry && matchesTerm;
+  });
+
+  renderFilterOptions(filterStores, stores.map((store) => ({
+    value: store.key,
+    label: `${store.chain} - ${store.location}`,
+    count: store.checks.length,
+  })), "stores", term ? "Geen winkels gevonden." : "Nog geen winkels.");
+}
+
+function renderYearFilter() {
+  const counts = new Map();
+  checks.forEach((check) => {
+    const year = getYear(getCheckDate(check));
+    if (year) counts.set(year, (counts.get(year) || 0) + 1);
+  });
+
+  renderFilterOptions(filterYears, getYears().map((year) => ({
+    value: year,
+    label: year,
+    count: counts.get(year) || 0,
+  })), "years", "Nog geen jaren.");
+}
+
+function renderFilterOptions(container, options, group, emptyText) {
+  container.innerHTML = "";
+
+  if (!options.length) {
+    const empty = document.createElement("p");
+    empty.className = "empty filter-empty";
+    empty.textContent = emptyText;
+    container.append(empty);
+    return;
+  }
+
+  options.forEach((option) => {
+    const label = document.createElement("label");
+    label.className = "filter-option";
+
+    const input = document.createElement("input");
+    input.type = "checkbox";
+    input.value = option.value;
+    input.checked = exportFilters[group].has(option.value);
+    input.addEventListener("change", () => {
+      if (input.checked) exportFilters[group].add(option.value);
+      else exportFilters[group].delete(option.value);
+      if (group === "countries") {
+        pruneStoreSelection();
+        renderStoreFilter();
+      }
+      updateExportSummary();
+      container.querySelectorAll(".filter-option").forEach((item) => {
+        item.classList.toggle("checked", item.querySelector("input").checked);
+      });
+    });
+
+    const text = document.createElement("span");
+    text.textContent = option.label;
+
+    const count = document.createElement("em");
+    count.textContent = option.count;
+
+    label.classList.toggle("checked", input.checked);
+    label.append(input, text, count);
+    container.append(label);
+  });
+}
+
+function pruneStoreSelection() {
+  if (!exportFilters.countries.size) return;
+  const allowed = new Set(
+    getStores()
+      .filter((store) => exportFilters.countries.has(store.country))
+      .map((store) => store.key),
+  );
+  [...exportFilters.stores].forEach((key) => {
+    if (!allowed.has(key)) exportFilters.stores.delete(key);
+  });
+}
+
+function updateExportSummary() {
+  const selected = getSelectedExportChecks();
+  const photoCount = selected.reduce((total, check) => total + (check.photos || []).length, 0);
+  const parts = [];
+  if (exportFilters.countries.size) parts.push(`${exportFilters.countries.size} land(en)`);
+  if (exportFilters.stores.size) parts.push(`${exportFilters.stores.size} winkel(s)`);
+  if (exportFilters.years.size) parts.push(`${exportFilters.years.size} jaar`);
+
+  const filterText = parts.length ? `Filter: ${parts.join(", ")}. ` : "Geen filter, alles wordt meegenomen. ";
+  exportSummary.textContent = `${filterText}${selected.length} check(s), ${photoCount} foto('s).`;
+  downloadZipButton.disabled = !selected.length;
 }
 
 function renderChecks() {
   renderStats();
-  renderExportOptions();
   renderDashboardChecks();
   renderStores();
   if (editingCheckId && !checkEditor.hidden) renderCheckEditor();
+  if (!exportDialog.hidden) {
+    pruneExportFilters();
+    renderExportFilters();
+  }
 }
 
 function setView(view) {
@@ -398,24 +555,43 @@ function renderCheckCards(container, list, emptyText) {
     });
 
     const gallery = card.querySelector(".gallery");
-    (check.photos || []).forEach((photo, index) => {
+    const photos = check.photos || [];
+    const hasOverflow = photos.length > GALLERY_LIMIT;
+    const visibleCount = hasOverflow ? GALLERY_LIMIT - 1 : photos.length;
+    const visiblePhotos = photos.slice(0, visibleCount);
+
+    visiblePhotos.forEach((photo, index) => {
       const img = document.createElement("img");
       img.src = photo.url || photo.data;
       img.alt = `${check.chain} - ${photo.name}`;
+      img.loading = "lazy";
       img.tabIndex = 0;
       img.addEventListener("click", (event) => {
         event.stopPropagation();
-        openPhotoViewer(check.photos || [], index, check.chain);
+        openPhotoViewer(photos, index, check.chain);
       });
       img.addEventListener("keydown", (event) => {
         if (event.key === "Enter" || event.key === " ") {
           event.preventDefault();
           event.stopPropagation();
-          openPhotoViewer(check.photos || [], index, check.chain);
+          openPhotoViewer(photos, index, check.chain);
         }
       });
       gallery.append(img);
     });
+
+    if (hasOverflow) {
+      const more = document.createElement("button");
+      more.type = "button";
+      more.className = "gallery-more";
+      more.textContent = `+${photos.length - visibleCount}`;
+      more.setAttribute("aria-label", `Alle ${photos.length} foto's bekijken`);
+      more.addEventListener("click", (event) => {
+        event.stopPropagation();
+        openPhotoViewer(photos, visibleCount, check.chain);
+      });
+      gallery.append(more);
+    }
 
     container.append(card);
   });
@@ -632,21 +808,39 @@ function renderStats() {
 }
 
 function getSelectedExportChecks() {
-  if (exportScope.value === "country") {
-    return checks.filter((check) => check.country === exportValue.value);
-  }
+  const storeKeys = exportFilters.stores;
+  return checks.filter((check) => {
+    if (exportFilters.countries.size && !exportFilters.countries.has(check.country)) return false;
+    if (storeKeys.size && !storeKeys.has(getStoreKey(check))) return false;
+    if (exportFilters.years.size && !exportFilters.years.has(getYear(getCheckDate(check)))) return false;
+    return true;
+  });
+}
 
-  if (exportScope.value === "year") {
-    return checks.filter((check) => getYear(getCheckDate(check)) === exportValue.value);
-  }
-
-  return checks;
+function getStoreKey(check) {
+  return [check.country, check.chain, check.location]
+    .map((value) => slugify(value || "onbekend"))
+    .join("__");
 }
 
 function getExportFileName() {
-  if (exportScope.value === "country") return `storechecks-${slugify(exportValue.value)}`;
-  if (exportScope.value === "year") return `storechecks-${exportValue.value}`;
-  return `storechecks-alles-${today}`;
+  const parts = ["storechecks"];
+
+  if (exportFilters.countries.size === 1) parts.push(slugify([...exportFilters.countries][0]));
+  else if (exportFilters.countries.size > 1) parts.push(`${exportFilters.countries.size}-landen`);
+
+  if (exportFilters.stores.size === 1) {
+    const store = getStores().find((item) => item.key === [...exportFilters.stores][0]);
+    if (store) parts.push(slugify(`${store.chain}-${store.location}`));
+  } else if (exportFilters.stores.size > 1) {
+    parts.push(`${exportFilters.stores.size}-winkels`);
+  }
+
+  if (exportFilters.years.size === 1) parts.push([...exportFilters.years][0]);
+  else if (exportFilters.years.size > 1) parts.push(`${exportFilters.years.size}-jaren`);
+
+  if (parts.length === 1) parts.push("alles", today);
+  return parts.join("-");
 }
 
 function getCountries() {
@@ -656,7 +850,7 @@ function getCountries() {
 function getStores() {
   const grouped = new Map();
   checks.forEach((check) => {
-    const key = [check.country, check.chain, check.location].map((value) => slugify(value || "onbekend")).join("__");
+    const key = getStoreKey(check);
     if (!grouped.has(key)) {
       grouped.set(key, {
         key,
@@ -866,17 +1060,6 @@ async function deleteCheck(id) {
   renderChecks();
 }
 
-function toggleExportMenu(event) {
-  event.stopPropagation();
-  exportMenu.hidden = !exportMenu.hidden;
-  renderExportOptions();
-}
-
-function closeExportMenu(event) {
-  if (exportMenu.hidden || event.target.closest(".export-control")) return;
-  exportMenu.hidden = true;
-}
-
 async function exportChecksZip() {
   const selectedChecks = getSelectedExportChecks();
   if (!selectedChecks.length) {
@@ -914,7 +1097,7 @@ async function exportChecksZip() {
       },
     );
     downloadBlob(blob, `${getExportFileName()}.zip`);
-    exportMenu.hidden = true;
+    closeExportDialog();
     if (exportState.errors.length) {
       alert(`ZIP gemaakt, maar ${exportState.errors.length} foto${exportState.errors.length === 1 ? "" : "'s"} konden niet worden toegevoegd. Zie export-waarschuwingen.txt in de ZIP.`);
     }

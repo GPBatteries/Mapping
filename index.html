@@ -2,7 +2,8 @@
 <html lang="nl">
   <head>
     <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
+    <meta name="theme-color" content="#edf5f4" />
     <title>Storechecks</title>
     <link rel="stylesheet" href="styles.css" />
   </head>
@@ -25,21 +26,6 @@
             <button class="icon-button" id="exportButton" type="button" title="Exporteren" aria-label="Exporteren">
               <span aria-hidden="true">↓</span>
             </button>
-            <div class="export-menu" id="exportMenu" hidden>
-              <label>
-                Export
-                <select id="exportScope">
-                  <option value="all">Alles</option>
-                  <option value="country">Per land</option>
-                  <option value="year">Per jaar</option>
-                </select>
-              </label>
-              <label id="exportValueLabel" hidden>
-                Selectie
-                <select id="exportValue"></select>
-              </label>
-              <button class="primary-button compact" id="downloadZipButton" type="button">Download ZIP</button>
-            </div>
           </div>
         </div>
       </header>
@@ -177,6 +163,51 @@
         <img id="photoViewerImage" alt="" />
         <button class="photo-viewer__nav photo-viewer__nav--next" id="photoViewerNext" type="button" aria-label="Volgende foto">›</button>
         <p id="photoViewerCaption"></p>
+      </div>
+
+      <div id="exportDialog" class="export-dialog" role="dialog" aria-modal="true" aria-label="Foto's exporteren" hidden>
+        <section class="export-panel">
+          <div class="export-panel__header">
+            <div>
+              <p class="eyebrow">Export</p>
+              <h2>Foto's exporteren</h2>
+              <p class="export-hint">Vink aan wat je wilt meenemen. Niets aangevinkt betekent alles.</p>
+            </div>
+            <button class="photo-viewer__close" id="exportClose" type="button" aria-label="Sluiten">x</button>
+          </div>
+
+          <div class="export-filters">
+            <section class="export-filter">
+              <div class="export-filter__head">
+                <h3>Land</h3>
+                <button class="text-button compact" type="button" data-clear="countries">Wis</button>
+              </div>
+              <div class="filter-options" id="filterCountries"></div>
+            </section>
+
+            <section class="export-filter">
+              <div class="export-filter__head">
+                <h3>Winkels</h3>
+                <button class="text-button compact" type="button" data-clear="stores">Wis</button>
+              </div>
+              <input id="storeSearch" class="filter-search" type="search" placeholder="Zoek keten of filiaal" />
+              <div class="filter-options filter-options--scroll" id="filterStores"></div>
+            </section>
+
+            <section class="export-filter">
+              <div class="export-filter__head">
+                <h3>Jaar</h3>
+                <button class="text-button compact" type="button" data-clear="years">Wis</button>
+              </div>
+              <div class="filter-options" id="filterYears"></div>
+            </section>
+          </div>
+
+          <div class="export-panel__footer">
+            <p id="exportSummary" class="export-summary">Alle checks worden geexporteerd.</p>
+            <button class="primary-button" id="downloadZipButton" type="button">Download ZIP</button>
+          </div>
+        </section>
       </div>
 
       <div id="checkEditor" class="check-editor" role="dialog" aria-modal="true" aria-label="Storecheck foto's beheren" hidden>
