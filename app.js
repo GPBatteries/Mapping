@@ -37,6 +37,9 @@ const COLLECTION_NAME = "storechecks";
 const THUMB_MAX = 400;
 const FULL_MAX = 1600;
 const JPEG_QUALITY = 0.82;
+// iPhone-foto's (HEIC) kan de browser niet tonen, die worden omgezet.
+// Zet op "image/png" als je per se PNG wilt (levert veel grotere bestanden op).
+const HEIC_OUTPUT = "image/jpeg";
 const CACHE_CONTROL = "public, max-age=31536000";
 
 const appLayout = document.querySelector("#appLayout");
@@ -113,6 +116,8 @@ let mapInstance = null;
 let markerLayer = null;
 let pendingCoords = null;
 let suggestTimer = null;
+let heicConverter = null;
+const convertedFiles = new Map();
 
 const COUNTRY_CODES = {
   Italie: "it",
@@ -306,14 +311,37 @@ function persistLocal() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(checks));
 }
 
-function renderPreview() {
+async function renderPreview() {
   preview.innerHTML = "";
-  [...photoInput.files].forEach((file) => {
-    const img = document.createElement("img");
-    img.alt = file.name;
-    img.src = URL.createObjectURL(file);
-    preview.append(img);
-  });
+  const files = [...photoInput.files];
+  if (!files.length) return;
+
+  const needsConversion = files.some(isHeic);
+  if (needsConversion) {
+    const notice = document.createElement("p");
+    notice.className = "empty";
+    notice.id = "heicNotice";
+    notice.textContent = "iPhone-foto's (HEIC) worden omgezet...";
+    preview.append(notice);
+  }
+
+  try {
+    const prepared = await prepareFiles(files);
+    preview.innerHTML = "";
+    prepared.forEach((file) => {
+      const img = document.createElement("img");
+      img.alt = file.name;
+      img.src = URL.createObjectURL(file);
+      preview.append(img);
+    });
+  } catch (error) {
+    console.error(error);
+    preview.innerHTML = "";
+    const failed = document.createElement("p");
+    failed.className = "empty";
+    failed.textContent = "Omzetten van HEIC is mislukt. Zet je iPhone op 'Meest compatibel' bij Camera > Indelingen.";
+    preview.append(failed);
+  }
 }
 
 async function saveCheck(event) {
@@ -369,6 +397,7 @@ async function saveCheck(event) {
     visitDate.value = today;
     preview.innerHTML = "";
     pendingCoords = null;
+    convertedFiles.clear();
     hideSuggestions();
     setLocationStatus("");
   } catch (error) {
@@ -386,6 +415,54 @@ function photoThumb(photo) {
 
 function photoFull(photo) {
   return photo.url || photo.data || "";
+}
+
+function isHeic(file) {
+  const type = (file.type || "").toLowerCase();
+  if (type === "image/heic" || type === "image/heif") return true;
+  return /\.(heic|heif)$/i.test(file.name || "");
+}
+
+function loadHeicConverter() {
+  if (heicConverter) return heicConverter;
+
+  heicConverter = new Promise((resolve, reject) => {
+    if (window.heic2any) {
+      resolve(window.heic2any);
+      return;
+    }
+
+    const script = document.createElement("script");
+    script.src = "https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js";
+    script.onload = () => (window.heic2any ? resolve(window.heic2any) : reject(new Error("HEIC-converter niet geladen.")));
+    script.onerror = () => reject(new Error("HEIC-converter kon niet worden geladen."));
+    document.head.append(script);
+  });
+
+  return heicConverter;
+}
+
+async function convertIfHeic(file) {
+  if (!isHeic(file)) return file;
+  if (convertedFiles.has(file)) return convertedFiles.get(file);
+
+  const convert = await loadHeicConverter();
+  const result = await convert({ blob: file, toType: HEIC_OUTPUT, quality: 0.92 });
+  const blob = Array.isArray(result) ? result[0] : result;
+  const extension = HEIC_OUTPUT === "image/png" ? ".png" : ".jpg";
+  const name = (file.name || "foto").replace(/\.(heic|heif)$/i, "") + extension;
+
+  const converted = new File([blob], name, { type: HEIC_OUTPUT, lastModified: file.lastModified });
+  convertedFiles.set(file, converted);
+  return converted;
+}
+
+async function prepareFiles(files) {
+  const prepared = [];
+  for (const file of files) {
+    prepared.push(await convertIfHeic(file));
+  }
+  return prepared;
 }
 
 function outputMime(type) {
@@ -418,7 +495,8 @@ function resizeToBlob(bitmap, maxSize, mimeType) {
   });
 }
 
-async function uploadPhoto(file, checkId) {
+async function uploadPhoto(source, checkId) {
+  const file = await convertIfHeic(source);
   const safeName = file.name.replace(/[^\w.-]/g, "_");
   const stamp = `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
   const basePath = `${COLLECTION_NAME}/${currentUser.uid}/${checkId}/${stamp}`;
@@ -462,7 +540,8 @@ async function uploadPhoto(file, checkId) {
   };
 }
 
-function fileToLocalPhoto(file) {
+async function fileToLocalPhoto(source) {
+  const file = await convertIfHeic(source);
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => resolve({ name: file.name, type: file.type, data: reader.result });
