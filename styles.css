@@ -1520,10 +1520,21 @@ textarea:focus {
 }
 
 .location-actions .text-button {
-  border: 1px solid rgba(255, 255, 255, 0.25);
+  border: 1px solid rgba(255, 255, 255, 0.4);
   border-radius: 10px;
   padding: 8px 12px;
+  background: rgba(255, 255, 255, 0.18);
   color: #ffffff;
+  box-shadow: none;
+}
+
+.location-actions .text-button:hover {
+  background: rgba(255, 255, 255, 0.3);
+}
+
+.location-actions .text-button:disabled {
+  opacity: 0.65;
+  cursor: progress;
 }
 
 .location-status {
