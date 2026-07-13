@@ -5,6 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover" />
     <meta name="theme-color" content="#edf5f4" />
     <title>Storechecks</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
     <link rel="stylesheet" href="styles.css" />
   </head>
   <body>
@@ -17,6 +18,7 @@
         <nav class="top-nav" aria-label="Dashboard">
           <button class="active" data-view="dashboard" type="button">Dashboard</button>
           <button data-view="stores" type="button">Winkels</button>
+          <button data-view="map" type="button">Kaart</button>
         </nav>
         <div class="header-actions">
           <div id="userBadge" class="user-badge" hidden></div>
@@ -70,6 +72,11 @@
               <input id="location" name="location" required placeholder="Adres, stad of winkelcentrum" />
             </label>
 
+            <div class="location-actions">
+              <button class="text-button compact" id="useMyLocation" type="button">Huidige locatie gebruiken</button>
+              <span id="locationStatus" class="location-status"></span>
+            </div>
+
             <label>
               Datum bezoek en foto's
               <input id="visitDate" name="visitDate" required type="date" />
@@ -112,6 +119,18 @@
               </div>
             </div>
             <div id="checks" class="checks" aria-live="polite"></div>
+          </section>
+
+          <section id="mapView" class="view-panel map-view" hidden>
+            <div class="collection-header">
+              <div>
+                <h2>Kaart</h2>
+                <p id="mapSummary">Nog geen locaties bekend.</p>
+              </div>
+              <button class="text-button compact" id="geocodeButton" type="button">Ontbrekende locaties opzoeken</button>
+            </div>
+            <div id="map" class="map-canvas"></div>
+            <p class="map-hint">Sleep een marker om de locatie te corrigeren. Klik op een marker voor de checks van die winkel.</p>
           </section>
 
           <section id="storesView" class="view-panel stores-view" hidden>

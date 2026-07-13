@@ -51,6 +51,12 @@ const photoInput = document.querySelector("#photos");
 const preview = document.querySelector("#preview");
 const dashboardView = document.querySelector("#dashboardView");
 const storesView = document.querySelector("#storesView");
+const mapView = document.querySelector("#mapView");
+const mapCanvas = document.querySelector("#map");
+const mapSummary = document.querySelector("#mapSummary");
+const geocodeButton = document.querySelector("#geocodeButton");
+const useMyLocation = document.querySelector("#useMyLocation");
+const locationStatus = document.querySelector("#locationStatus");
 const checksEl = document.querySelector("#checks");
 const storesList = document.querySelector("#storesList");
 const storeChecks = document.querySelector("#storeChecks");
@@ -96,6 +102,12 @@ let viewerPhotos = [];
 let viewerPhotoIndex = 0;
 
 const GALLERY_LIMIT = 6;
+const GEOCODE_DELAY = 1100; // Nominatim staat 1 verzoek per seconde toe
+
+let leaflet = null;
+let mapInstance = null;
+let markerLayer = null;
+let pendingCoords = null;
 const exportFilters = {
   countries: new Set(),
   stores: new Set(),
@@ -110,6 +122,8 @@ loginButtonHeader.addEventListener("click", login);
 logoutButton.addEventListener("click", logout);
 navButtons.forEach((button) => button.addEventListener("click", () => setView(button.dataset.view)));
 photoInput.addEventListener("change", renderPreview);
+useMyLocation.addEventListener("click", captureCurrentLocation);
+geocodeButton.addEventListener("click", geocodeMissingChecks);
 form.addEventListener("submit", saveCheck);
 optimizeButton.addEventListener("click", optimizeExistingPhotos);
 exportButton.addEventListener("click", openExportDialog);
@@ -305,6 +319,15 @@ async function saveCheck(event) {
       createdAt: new Date().toISOString(),
     };
 
+    saveButton.textContent = "Locatie bepalen...";
+    const coords = await resolveCoords(baseCheck, files);
+    if (coords) {
+      baseCheck.lat = coords.lat;
+      baseCheck.lng = coords.lng;
+      baseCheck.geoSource = coords.geoSource;
+    }
+    saveButton.textContent = firebase ? "Uploaden..." : "Opslaan...";
+
     if (firebase) {
       const photos = await Promise.all(files.map((file) => uploadPhoto(file, checkId)));
       await addDoc(collection(firebase.db, COLLECTION_NAME), {
@@ -323,6 +346,8 @@ async function saveCheck(event) {
     form.reset();
     visitDate.value = today;
     preview.innerHTML = "";
+    pendingCoords = null;
+    setLocationStatus("");
   } catch (error) {
     console.error(error);
     alert("Opslaan is niet gelukt. Controleer je Firebase-configuratie en regels.");
@@ -580,6 +605,7 @@ function renderChecks() {
   renderDashboardChecks();
   renderStores();
   if (editingCheckId && !checkEditor.hidden) renderCheckEditor();
+  if (currentView === "map" && mapInstance) renderMarkers();
   if (!exportDialog.hidden) {
     pruneExportFilters();
     renderExportFilters();
@@ -590,10 +616,12 @@ function setView(view) {
   currentView = view || "dashboard";
   dashboardView.hidden = currentView !== "dashboard";
   storesView.hidden = currentView !== "stores";
+  mapView.hidden = currentView !== "map";
   navButtons.forEach((button) => {
     button.classList.toggle("active", button.dataset.view === currentView);
   });
   renderChecks();
+  if (currentView === "map") showMap();
 }
 
 function renderDashboardChecks() {
@@ -971,6 +999,250 @@ async function optimizeSinglePhoto(photo) {
   };
 }
 
+
+/* ---------- Locatie bepalen ---------- */
+
+function setLocationStatus(text, tone = "") {
+  locationStatus.textContent = text;
+  locationStatus.className = `location-status ${tone}`.trim();
+}
+
+async function captureCurrentLocation() {
+  if (!navigator.geolocation) {
+    setLocationStatus("Deze browser ondersteunt geen locatie.", "warn");
+    return;
+  }
+
+  useMyLocation.disabled = true;
+  setLocationStatus("Locatie bepalen...");
+
+  try {
+    const position = await new Promise((resolve, reject) => {
+      navigator.geolocation.getCurrentPosition(resolve, reject, {
+        enableHighAccuracy: true,
+        timeout: 15000,
+        maximumAge: 0,
+      });
+    });
+
+    pendingCoords = {
+      lat: position.coords.latitude,
+      lng: position.coords.longitude,
+      geoSource: "gps",
+    };
+    setLocationStatus(`Locatie vastgelegd (${formatCoords(pendingCoords)})`, "ok");
+  } catch (error) {
+    console.error(error);
+    setLocationStatus("Locatie ophalen is niet gelukt. Sta locatietoegang toe.", "warn");
+  } finally {
+    useMyLocation.disabled = false;
+  }
+}
+
+function formatCoords(coords) {
+  return `${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)}`;
+}
+
+async function readExifCoords(files) {
+  if (!files.length) return null;
+
+  try {
+    const exifr = (await import("https://cdn.jsdelivr.net/npm/exifr@7.1.3/+esm")).default;
+    for (const file of files) {
+      const gps = await exifr.gps(file).catch(() => null);
+      if (gps && Number.isFinite(gps.latitude) && Number.isFinite(gps.longitude)) {
+        return { lat: gps.latitude, lng: gps.longitude, geoSource: "exif" };
+      }
+    }
+  } catch (error) {
+    console.warn("EXIF uitlezen mislukt:", error);
+  }
+
+  return null;
+}
+
+async function geocodeQuery(query) {
+  if (!query.trim()) return null;
+
+  const url = new URL("https://nominatim.openstreetmap.org/search");
+  url.searchParams.set("format", "json");
+  url.searchParams.set("limit", "1");
+  url.searchParams.set("q", query);
+
+  const response = await fetch(url, { headers: { Accept: "application/json" } });
+  if (!response.ok) throw new Error("Geocoding is niet bereikbaar.");
+
+  const results = await response.json();
+  if (!results.length) return null;
+
+  return {
+    lat: Number(results[0].lat),
+    lng: Number(results[0].lon),
+    geoSource: "geocode",
+  };
+}
+
+function geocodeText(check) {
+  return [check.chain, check.location, check.country].filter(Boolean).join(", ");
+}
+
+async function resolveCoords(check, files) {
+  if (pendingCoords) return pendingCoords;
+
+  const fromPhoto = await readExifCoords(files);
+  if (fromPhoto) return fromPhoto;
+
+  try {
+    return await geocodeQuery(geocodeText(check));
+  } catch (error) {
+    console.warn("Geocoding mislukt:", error);
+    return null;
+  }
+}
+
+function hasCoords(check) {
+  return Number.isFinite(check.lat) && Number.isFinite(check.lng);
+}
+
+async function geocodeMissingChecks() {
+  const targets = checks.filter((check) => !hasCoords(check));
+  if (!targets.length) {
+    alert("Alle checks hebben al een locatie.");
+    return;
+  }
+
+  geocodeButton.disabled = true;
+  let done = 0;
+  let failed = 0;
+
+  try {
+    for (const check of targets) {
+      done += 1;
+      geocodeButton.textContent = `Opzoeken ${done}/${targets.length}`;
+      await waitForPaint();
+
+      try {
+        const coords = await geocodeQuery(geocodeText(check));
+        if (coords) await saveCheckCoords(check.id, coords);
+        else failed += 1;
+      } catch (error) {
+        console.error(error);
+        failed += 1;
+      }
+
+      await new Promise((resolve) => window.setTimeout(resolve, GEOCODE_DELAY));
+    }
+
+    alert(failed
+      ? `Klaar. ${targets.length - failed} gevonden, ${failed} niet. Sleep die markers handmatig of vul het locatieveld preciezer in.`
+      : "Alle locaties zijn gevonden.");
+  } finally {
+    geocodeButton.disabled = false;
+    geocodeButton.textContent = "Ontbrekende locaties opzoeken";
+    renderMarkers();
+  }
+}
+
+async function saveCheckCoords(checkId, coords) {
+  const payload = { lat: coords.lat, lng: coords.lng, geoSource: coords.geoSource || "manual" };
+
+  if (firebase) {
+    await updateDoc(doc(firebase.db, COLLECTION_NAME, checkId), payload);
+  }
+
+  checks = checks.map((check) => (check.id === checkId ? { ...check, ...payload } : check));
+  if (!firebase) persistLocal();
+}
+
+/* ---------- Kaart ---------- */
+
+async function showMap() {
+  try {
+    if (!leaflet) {
+      leaflet = (await import("https://cdn.jsdelivr.net/npm/leaflet@1.9.4/+esm")).default;
+    }
+
+    if (!mapInstance) {
+      mapInstance = leaflet.map(mapCanvas, { scrollWheelZoom: true }).setView([48.8, 4.5], 5);
+      leaflet.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+        maxZoom: 19,
+        attribution: "&copy; OpenStreetMap",
+      }).addTo(mapInstance);
+      markerLayer = leaflet.layerGroup().addTo(mapInstance);
+    }
+
+    renderMarkers();
+    window.setTimeout(() => mapInstance.invalidateSize(), 60);
+  } catch (error) {
+    console.error(error);
+    mapSummary.textContent = "De kaart kon niet worden geladen.";
+  }
+}
+
+function renderMarkers() {
+  if (!mapInstance || !markerLayer) return;
+  markerLayer.clearLayers();
+
+  const stores = getStores();
+  const located = [];
+  let missing = 0;
+
+  stores.forEach((store) => {
+    const anchor = store.checks.find(hasCoords);
+    if (!anchor) {
+      missing += 1;
+      return;
+    }
+
+    const marker = leaflet.marker([anchor.lat, anchor.lng], { draggable: true });
+    marker.bindPopup(buildMarkerPopup(store));
+    marker.on("dragend", async (event) => {
+      const { lat, lng } = event.target.getLatLng();
+      await Promise.all(store.checks.map((check) => saveCheckCoords(check.id, { lat, lng, geoSource: "manual" })));
+      renderChecks();
+    });
+    marker.on("popupopen", () => {
+      const button = document.querySelector(`[data-store-open="${store.key}"]`);
+      if (button) {
+        button.addEventListener("click", () => {
+          selectedStoreKey = store.key;
+          setView("stores");
+        });
+      }
+    });
+
+    marker.addTo(markerLayer);
+    located.push([anchor.lat, anchor.lng]);
+  });
+
+  mapSummary.textContent = located.length
+    ? `${located.length} winkel(s) op de kaart${missing ? `, ${missing} zonder locatie` : ""}.`
+    : "Nog geen locaties bekend. Gebruik 'Ontbrekende locaties opzoeken'.";
+
+  geocodeButton.hidden = !checks.some((check) => !hasCoords(check));
+
+  if (located.length) {
+    mapInstance.fitBounds(leaflet.latLngBounds(located).pad(0.25), { maxZoom: 14 });
+  }
+}
+
+function buildMarkerPopup(store) {
+  const latest = [...store.checks].sort((a, b) => String(getCheckDate(b)).localeCompare(String(getCheckDate(a))))[0];
+  const photoCount = store.checks.reduce((total, check) => total + (check.photos || []).length, 0);
+  const thumb = (latest.photos || []).map(photoThumb).find(Boolean);
+
+  return `
+    <div class="map-popup">
+      ${thumb ? `<img src="${escapeHtml(thumb)}" alt="" />` : ""}
+      <strong>${escapeHtml(store.chain)}</strong>
+      <span>${escapeHtml(store.location)}, ${escapeHtml(store.country)}</span>
+      <span>${store.checks.length} check(s), ${photoCount} foto('s)</span>
+      <span>Laatste bezoek: ${escapeHtml(formatDate(getCheckDate(latest)))}</span>
+      <button type="button" data-store-open="${escapeHtml(store.key)}">Bekijk checks</button>
+    </div>
+  `;
+}
+
 function renderStats() {
   const latest = checks
     .map(getCheckDate)
@@ -1061,6 +1333,9 @@ function toExportCheck(check) {
     location: check.location,
     date: getCheckDate(check),
     notes: check.notes || "",
+    lat: Number.isFinite(check.lat) ? check.lat : null,
+    lng: Number.isFinite(check.lng) ? check.lng : null,
+    geoSource: check.geoSource || "",
     createdAt: check.createdAt || "",
     photos: (check.photos || []).map((photo) => ({
       name: photo.name,
