@@ -1393,3 +1393,67 @@ textarea:focus {
     font-size: 1.3rem;
   }
 }
+
+.optimize-button {
+  border: 1px solid rgba(48, 183, 0, 0.4);
+  border-radius: 10px;
+  padding: 8px 12px;
+  background: var(--brand-soft);
+  color: var(--brand-dark);
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+.optimize-button:disabled {
+  opacity: 0.7;
+  cursor: progress;
+}
+
+@media (max-width: 560px) {
+  .optimize-button {
+    font-size: 0.78rem;
+    padding: 8px 10px;
+  }
+}
+
+/* Exportpaneel staat op een lichte achtergrond: globale witte tekst terugdraaien */
+.export-panel .eyebrow {
+  color: var(--brand-dark);
+}
+
+.export-panel h2,
+.export-filter__head h3 {
+  color: var(--text);
+}
+
+.export-panel label,
+.export-panel .filter-option {
+  color: var(--text);
+  font-size: 0.92rem;
+  font-weight: 600;
+}
+
+.export-panel input[type="search"],
+.export-panel .filter-search {
+  border: 1px solid var(--line);
+  background: #ffffff;
+  color: var(--text);
+  font-weight: 500;
+}
+
+.export-panel input[type="search"]::placeholder,
+.export-panel .filter-search::placeholder {
+  color: var(--muted);
+}
+
+.export-panel .filter-option em {
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.export-panel .filter-empty,
+.export-panel .export-hint,
+.export-panel .export-summary {
+  color: var(--muted);
+  font-weight: 500;
+}
