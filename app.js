@@ -431,58 +431,53 @@ function loadHeicConverter() {
   if (heicConverter) return heicConverter;
 
   heicConverter = new Promise((resolve, reject) => {
-    if (window.heic2any) {
-      resolve(window.heic2any);
+    if (window.libheif) {
+      resolve(window.libheif);
       return;
     }
 
     const script = document.createElement("script");
-    script.src = "https://cdn.jsdelivr.net/npm/heic2any@0.0.4/dist/heic2any.min.js";
-    script.onload = () => (window.heic2any ? resolve(window.heic2any) : reject(new Error("HEIC-converter niet geladen.")));
-    script.onerror = () => reject(new Error("HEIC-converter kon niet worden geladen."));
+    script.src = "https://cdn.jsdelivr.net/npm/libheif-js@1.18.2/libheif-wasm/libheif-bundle.js";
+    script.onload = () => (window.libheif ? resolve(window.libheif) : reject(new Error("HEIC-decoder niet beschikbaar.")));
+    script.onerror = () => reject(new Error("HEIC-decoder kon niet worden geladen."));
     document.head.append(script);
   });
 
   return heicConverter;
 }
 
-async function convertIfHeic(file) {
-  if (!isHeic(file)) return file;
-  if (convertedFiles.has(file)) return convertedFiles.get(file);
+async function decodeHeic(file) {
+  const libheif = await loadHeicConverter();
+  const buffer = await file.arrayBuffer();
+  const decoder = new libheif.HeifDecoder();
+  const images = decoder.decode(new Uint8Array(buffer));
 
-  let blob = null;
-  const problems = [];
+  if (!images || !images.length) throw new Error("Geen afbeelding gevonden in het HEIC-bestand.");
 
-  // Route 1: de browser kan HEIC zelf decoderen (Safari, nieuwere Chrome).
-  try {
-    const bitmap = await createImageBitmap(file);
-    blob = await resizeToBlob(bitmap, 0, HEIC_OUTPUT);
-    bitmap.close();
-  } catch (error) {
-    problems.push(`native: ${error.message || error}`);
-  }
+  const image = images[0];
+  const width = image.get_width();
+  const height = image.get_height();
 
-  // Route 2: omzetten met heic2any.
-  if (!blob) {
-    try {
-      const convert = await loadHeicConverter();
-      const result = await convert({ blob: file, toType: HEIC_OUTPUT, quality: 0.92 });
-      blob = Array.isArray(result) ? result[0] : result;
-    } catch (error) {
-      problems.push(`heic2any: ${error.message || error}`);
-    }
-  }
+  const canvas = document.createElement("canvas");
+  canvas.width = width;
+  canvas.height = height;
+  const context = canvas.getContext("2d");
+  const imageData = context.createImageData(width, height);
 
-  if (!blob) {
-    console.error("HEIC-conversie mislukt", file.name, problems);
-    throw new Error(`${file.name}: ${problems.join(" | ")}`);
-  }
+  await new Promise((resolve, reject) => {
+    image.display(imageData, (result) => (result ? resolve(result) : reject(new Error("HEIC decoderen is mislukt."))));
+  });
 
-  const extension = HEIC_OUTPUT === "image/png" ? ".png" : ".jpg";
-  const name = (file.name || "foto").replace(/\.(heic|heif)$/i, "") + extension;
-  const converted = new File([blob], name, { type: HEIC_OUTPUT, lastModified: file.lastModified });
-  convertedFiles.set(file, converted);
-  return converted;
+  context.putImageData(imageData, 0, 0);
+  images.forEach((item) => item.free && item.free());
+
+  return new Promise((resolve, reject) => {
+    canvas.toBlob(
+      (blob) => (blob ? resolve(blob) : reject(new Error("HEIC omzetten is mislukt."))),
+      HEIC_OUTPUT,
+      0.92,
+    );
+  });
 }
 
 async function prepareFiles(files) {
