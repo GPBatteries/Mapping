@@ -67,9 +67,10 @@
               </label>
             </div>
 
-            <label>
+            <label class="location-field">
               Filiaal / locatie
-              <input id="location" name="location" required placeholder="Adres, stad of winkelcentrum" />
+              <input id="location" name="location" required autocomplete="off" placeholder="Zoek keten, adres of stad" />
+              <div id="locationSuggestions" class="suggestions" hidden></div>
             </label>
 
             <div class="location-actions">

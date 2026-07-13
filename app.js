@@ -48,6 +48,10 @@ const userBadge = document.querySelector("#userBadge");
 const navButtons = document.querySelectorAll(".top-nav button");
 const form = document.querySelector("#checkForm");
 const photoInput = document.querySelector("#photos");
+const chainInput = document.querySelector("#chain");
+const countryInput = document.querySelector("#country");
+const locationInput = document.querySelector("#location");
+const locationSuggestions = document.querySelector("#locationSuggestions");
 const preview = document.querySelector("#preview");
 const dashboardView = document.querySelector("#dashboardView");
 const storesView = document.querySelector("#storesView");
@@ -108,6 +112,16 @@ let leaflet = null;
 let mapInstance = null;
 let markerLayer = null;
 let pendingCoords = null;
+let suggestTimer = null;
+
+const COUNTRY_CODES = {
+  Italie: "it",
+  Frankrijk: "fr",
+  Nederland: "nl",
+  Duitsland: "de",
+  Belgie: "be",
+  Spanje: "es",
+};
 const exportFilters = {
   countries: new Set(),
   stores: new Set(),
@@ -121,7 +135,15 @@ loginButton.addEventListener("click", login);
 loginButtonHeader.addEventListener("click", login);
 logoutButton.addEventListener("click", logout);
 navButtons.forEach((button) => button.addEventListener("click", () => setView(button.dataset.view)));
-photoInput.addEventListener("change", renderPreview);
+photoInput.addEventListener("change", () => {
+  renderPreview();
+  detectPhotoLocation();
+});
+locationInput.addEventListener("input", scheduleSuggestions);
+locationInput.addEventListener("focus", scheduleSuggestions);
+document.addEventListener("click", (event) => {
+  if (!event.target.closest(".location-field")) hideSuggestions();
+});
 useMyLocation.addEventListener("click", captureCurrentLocation);
 geocodeButton.addEventListener("click", geocodeMissingChecks);
 form.addEventListener("submit", saveCheck);
@@ -347,6 +369,7 @@ async function saveCheck(event) {
     visitDate.value = today;
     preview.innerHTML = "";
     pendingCoords = null;
+    hideSuggestions();
     setLocationStatus("");
   } catch (error) {
     console.error(error);
@@ -1043,6 +1066,23 @@ function formatCoords(coords) {
   return `${coords.lat.toFixed(5)}, ${coords.lng.toFixed(5)}`;
 }
 
+async function detectPhotoLocation() {
+  const files = [...photoInput.files];
+  if (!files.length) return;
+  if (pendingCoords && pendingCoords.geoSource !== "exif") return; // handmatige keuze wint
+
+  setLocationStatus("Foto's controleren op GPS...");
+  const coords = await readExifCoords(files);
+
+  if (coords) {
+    pendingCoords = coords;
+    setLocationStatus(`Locatie uit foto (${formatCoords(coords)})`, "ok");
+    return;
+  }
+
+  setLocationStatus("Geen GPS in de foto's. Kies de winkel via het zoekveld.", "warn");
+}
+
 async function readExifCoords(files) {
   if (!files.length) return null;
 
@@ -1059,6 +1099,93 @@ async function readExifCoords(files) {
   }
 
   return null;
+}
+
+function scheduleSuggestions() {
+  window.clearTimeout(suggestTimer);
+  const term = locationInput.value.trim();
+  if (term.length < 3) {
+    hideSuggestions();
+    return;
+  }
+  suggestTimer = window.setTimeout(() => loadSuggestions(term), 400);
+}
+
+async function loadSuggestions(term) {
+  try {
+    const results = await searchPlaces(`${chainInput.value.trim()} ${term}`.trim(), countryInput.value);
+    renderSuggestions(results.length ? results : await searchPlaces(term, countryInput.value));
+  } catch (error) {
+    console.warn("Zoeken mislukt:", error);
+    hideSuggestions();
+  }
+}
+
+async function searchPlaces(query, country) {
+  if (!query.trim()) return [];
+
+  const url = new URL("https://nominatim.openstreetmap.org/search");
+  url.searchParams.set("format", "json");
+  url.searchParams.set("addressdetails", "1");
+  url.searchParams.set("limit", "6");
+  url.searchParams.set("q", query);
+  const code = COUNTRY_CODES[country];
+  if (code) url.searchParams.set("countrycodes", code);
+
+  const response = await fetch(url, { headers: { Accept: "application/json" } });
+  if (!response.ok) throw new Error("Zoekdienst niet bereikbaar.");
+  return response.json();
+}
+
+function renderSuggestions(results) {
+  locationSuggestions.innerHTML = "";
+
+  if (!results.length) {
+    hideSuggestions();
+    return;
+  }
+
+  results.forEach((result) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "suggestion";
+
+    const title = document.createElement("strong");
+    title.textContent = suggestionTitle(result);
+
+    const detail = document.createElement("span");
+    detail.textContent = result.display_name;
+
+    button.append(title, detail);
+    button.addEventListener("click", () => selectSuggestion(result));
+    locationSuggestions.append(button);
+  });
+
+  locationSuggestions.hidden = false;
+}
+
+function suggestionTitle(result) {
+  const address = result.address || {};
+  const name = result.name || address.shop || address.amenity || "";
+  const street = [address.road, address.house_number].filter(Boolean).join(" ");
+  const city = address.city || address.town || address.village || address.municipality || "";
+  return [name, street, city].filter(Boolean).join(", ") || result.display_name;
+}
+
+function selectSuggestion(result) {
+  locationInput.value = suggestionTitle(result);
+  pendingCoords = {
+    lat: Number(result.lat),
+    lng: Number(result.lon),
+    geoSource: "search",
+  };
+  setLocationStatus(`Locatie gekozen (${formatCoords(pendingCoords)})`, "ok");
+  hideSuggestions();
+}
+
+function hideSuggestions() {
+  locationSuggestions.hidden = true;
+  locationSuggestions.innerHTML = "";
 }
 
 async function geocodeQuery(query) {
@@ -1087,10 +1214,10 @@ function geocodeText(check) {
 }
 
 async function resolveCoords(check, files) {
-  if (pendingCoords) return pendingCoords;
-
   const fromPhoto = await readExifCoords(files);
   if (fromPhoto) return fromPhoto;
+
+  if (pendingCoords) return pendingCoords;
 
   try {
     return await geocodeQuery(geocodeText(check));

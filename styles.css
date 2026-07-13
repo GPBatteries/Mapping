@@ -1545,3 +1545,59 @@ textarea:focus {
     min-height: 62vh;
   }
 }
+
+/* Zoeksuggesties bij het locatieveld */
+.location-field {
+  position: relative;
+}
+
+.suggestions {
+  position: absolute;
+  top: 100%;
+  right: 0;
+  left: 0;
+  z-index: 40;
+  display: grid;
+  max-height: 260px;
+  margin-top: 6px;
+  overflow: auto;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: #ffffff;
+  box-shadow: 0 20px 44px rgba(52, 66, 74, 0.22);
+}
+
+.suggestion {
+  display: grid;
+  gap: 2px;
+  padding: 10px 12px;
+  border: 0;
+  border-bottom: 1px solid var(--line);
+  background: transparent;
+  color: var(--text);
+  cursor: pointer;
+  text-align: left;
+}
+
+.suggestion:last-child {
+  border-bottom: 0;
+}
+
+.suggestion:hover,
+.suggestion:focus-visible {
+  background: var(--brand-soft);
+}
+
+.suggestion strong {
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
+.suggestion span {
+  overflow: hidden;
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 500;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
