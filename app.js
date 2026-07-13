@@ -70,8 +70,6 @@ const downloadZipButton = document.querySelector("#downloadZipButton");
 const visitDate = document.querySelector("#visitDate");
 const syncStatus = document.querySelector("#syncStatus");
 const totalChecks = document.querySelector("#totalChecks");
-const totalPhotos = document.querySelector("#totalPhotos");
-const totalCountries = document.querySelector("#totalCountries");
 const latestVisit = document.querySelector("#latestVisit");
 const photoViewer = document.querySelector("#photoViewer");
 const photoViewerImage = document.querySelector("#photoViewerImage");
@@ -974,8 +972,6 @@ async function optimizeSinglePhoto(photo) {
 }
 
 function renderStats() {
-  const photoCount = checks.reduce((total, check) => total + (check.photos || []).length, 0);
-  const countries = new Set(checks.map((check) => check.country).filter(Boolean));
   const latest = checks
     .map(getCheckDate)
     .filter(Boolean)
@@ -983,8 +979,6 @@ function renderStats() {
     .at(-1);
 
   totalChecks.textContent = checks.length;
-  totalPhotos.textContent = photoCount;
-  totalCountries.textContent = countries.size;
   latestVisit.textContent = latest ? formatShortDate(latest) : "-";
 }
 
