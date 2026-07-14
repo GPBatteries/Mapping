@@ -447,9 +447,14 @@ function loadHeicConverter() {
 }
 
 async function decodeHeic(file) {
-  const libheif = await loadHeicConverter();
+  const module = await loadHeicConverter();
+  // De bundle exporteert een functie die je moet aanroepen om de API te krijgen.
+  const libheif = await (typeof module === "function" ? module() : module);
+  const HeifDecoder = libheif.HeifDecoder || (libheif.default && libheif.default.HeifDecoder);
+  if (typeof HeifDecoder !== "function") throw new Error("HeifDecoder niet gevonden in libheif.");
+
   const buffer = await file.arrayBuffer();
-  const decoder = new libheif.HeifDecoder();
+  const decoder = new HeifDecoder();
   const images = decoder.decode(new Uint8Array(buffer));
 
   if (!images || !images.length) throw new Error("Geen afbeelding gevonden in het HEIC-bestand.");
