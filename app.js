@@ -52,6 +52,8 @@ const navButtons = document.querySelectorAll(".top-nav button");
 const form = document.querySelector("#checkForm");
 const photoInput = document.querySelector("#photos");
 const chainInput = document.querySelector("#chain");
+const chainSuggestions = document.querySelector("#chainSuggestions");
+const categoryInput = document.querySelector("#category");
 const countryInput = document.querySelector("#country");
 const locationInput = document.querySelector("#location");
 const locationSuggestions = document.querySelector("#locationSuggestions");
@@ -74,6 +76,7 @@ const optimizeButton = document.querySelector("#optimizeButton");
 const exportButton = document.querySelector("#exportButton");
 const exportDialog = document.querySelector("#exportDialog");
 const exportClose = document.querySelector("#exportClose");
+const filterCategories = document.querySelector("#filterCategories");
 const filterCountries = document.querySelector("#filterCountries");
 const filterStores = document.querySelector("#filterStores");
 const filterYears = document.querySelector("#filterYears");
@@ -119,6 +122,8 @@ let suggestTimer = null;
 let heicConverter = null;
 const convertedFiles = new Map();
 
+const CATEGORIES = ["FOOD", "DIY", "TOY", "CES", "Discount"];
+
 const COUNTRY_CODES = {
   Italie: "it",
   Frankrijk: "fr",
@@ -128,6 +133,7 @@ const COUNTRY_CODES = {
   Spanje: "es",
 };
 const exportFilters = {
+  categories: new Set(),
   countries: new Set(),
   stores: new Set(),
   years: new Set(),
@@ -146,8 +152,11 @@ photoInput.addEventListener("change", () => {
 });
 locationInput.addEventListener("input", scheduleSuggestions);
 locationInput.addEventListener("focus", scheduleSuggestions);
+chainInput.addEventListener("input", renderChainSuggestions);
+chainInput.addEventListener("focus", renderChainSuggestions);
 document.addEventListener("click", (event) => {
   if (!event.target.closest(".location-field")) hideSuggestions();
+  if (!event.target.closest(".chain-field")) hideChainSuggestions();
 });
 useMyLocation.addEventListener("click", captureCurrentLocation);
 geocodeButton.addEventListener("click", geocodeMissingChecks);
@@ -367,6 +376,7 @@ async function saveCheck(event) {
     const checkId = crypto.randomUUID();
     const baseCheck = {
       chain: data.get("chain").trim(),
+      category: data.get("category") || "",
       country: data.get("country"),
       location: data.get("location").trim(),
       visitDate: data.get("visitDate"),
@@ -404,6 +414,7 @@ async function saveCheck(event) {
     pendingCoords = null;
     convertedFiles.clear();
     hideSuggestions();
+    hideChainSuggestions();
     setLocationStatus("");
   } catch (error) {
     console.error(error);
@@ -630,11 +641,20 @@ function closeExportDialog() {
   if (photoViewer.hidden && checkEditor.hidden) document.body.classList.remove("viewer-open");
 }
 
+function getUsedCategories() {
+  const used = new Set(checks.map((check) => check.category).filter(Boolean));
+  return CATEGORIES.filter((category) => used.has(category));
+}
+
 function pruneExportFilters() {
+  const categories = new Set(getUsedCategories());
   const countries = new Set(getCountries());
   const stores = new Set(getStores().map((store) => store.key));
   const years = new Set(getYears());
 
+  [...exportFilters.categories].forEach((value) => {
+    if (!categories.has(value)) exportFilters.categories.delete(value);
+  });
   [...exportFilters.countries].forEach((value) => {
     if (!countries.has(value)) exportFilters.countries.delete(value);
   });
@@ -647,10 +667,24 @@ function pruneExportFilters() {
 }
 
 function renderExportFilters() {
+  renderCategoryFilter();
   renderCountryFilter();
   renderStoreFilter();
   renderYearFilter();
   updateExportSummary();
+}
+
+function renderCategoryFilter() {
+  const counts = new Map();
+  checks.forEach((check) => {
+    if (check.category) counts.set(check.category, (counts.get(check.category) || 0) + 1);
+  });
+
+  renderFilterOptions(filterCategories, getUsedCategories().map((category) => ({
+    value: category,
+    label: category,
+    count: counts.get(category) || 0,
+  })), "categories", "Nog geen categorieen.");
 }
 
 function renderCountryFilter() {
@@ -758,6 +792,7 @@ function updateExportSummary() {
   const selected = getSelectedExportChecks();
   const photoCount = selected.reduce((total, check) => total + (check.photos || []).length, 0);
   const parts = [];
+  if (exportFilters.categories.size) parts.push(`${exportFilters.categories.size} categorie(en)`);
   if (exportFilters.countries.size) parts.push(`${exportFilters.countries.size} land(en)`);
   if (exportFilters.stores.size) parts.push(`${exportFilters.stores.size} winkel(s)`);
   if (exportFilters.years.size) parts.push(`${exportFilters.years.size} jaar`);
@@ -820,7 +855,7 @@ function renderCheckCards(container, list, emptyText) {
     card.addEventListener("keydown", (event) => {
       if (event.key === "Enter") openCheckEditor(check.id);
     });
-    card.querySelector(".country").textContent = check.country;
+    card.querySelector(".country").textContent = [check.category, check.country].filter(Boolean).join(" - ");
     card.querySelector("h3").textContent = check.chain;
     card.querySelector(".location").textContent = check.location;
     card.querySelector(".visit-date").textContent = formatDate(getCheckDate(check));
@@ -1253,6 +1288,60 @@ async function readExifCoords(files) {
   return null;
 }
 
+function getKnownChains() {
+  const map = new Map();
+  checks.forEach((check) => {
+    if (!check.chain) return;
+    const key = check.chain.toLowerCase();
+    const entry = map.get(key) || { chain: check.chain, category: check.category || "", count: 0 };
+    entry.count += 1;
+    if (!entry.category && check.category) entry.category = check.category;
+    map.set(key, entry);
+  });
+  return [...map.values()].sort((a, b) => b.count - a.count);
+}
+
+function renderChainSuggestions() {
+  const term = chainInput.value.trim().toLowerCase();
+  const matches = getKnownChains().filter((entry) => !term || entry.chain.toLowerCase().includes(term));
+
+  chainSuggestions.innerHTML = "";
+  if (!matches.length) {
+    hideChainSuggestions();
+    return;
+  }
+
+  matches.slice(0, 8).forEach((entry) => {
+    const button = document.createElement("button");
+    button.type = "button";
+    button.className = "suggestion";
+
+    const title = document.createElement("strong");
+    title.textContent = entry.chain;
+
+    const detail = document.createElement("span");
+    detail.textContent = `${entry.category ? entry.category + " - " : ""}${entry.count} check(s)`;
+
+    button.append(title, detail);
+    button.addEventListener("click", () => selectChain(entry));
+    chainSuggestions.append(button);
+  });
+
+  chainSuggestions.hidden = false;
+}
+
+function selectChain(entry) {
+  chainInput.value = entry.chain;
+  if (entry.category) categoryInput.value = entry.category;
+  hideChainSuggestions();
+  renderChainSuggestions();
+}
+
+function hideChainSuggestions() {
+  chainSuggestions.hidden = true;
+  chainSuggestions.innerHTML = "";
+}
+
 function scheduleSuggestions() {
   window.clearTimeout(suggestTimer);
   const term = locationInput.value.trim();
@@ -1536,6 +1625,7 @@ function renderStats() {
 function getSelectedExportChecks() {
   const storeKeys = exportFilters.stores;
   return checks.filter((check) => {
+    if (exportFilters.categories.size && !exportFilters.categories.has(check.category)) return false;
     if (exportFilters.countries.size && !exportFilters.countries.has(check.country)) return false;
     if (storeKeys.size && !storeKeys.has(getStoreKey(check))) return false;
     if (exportFilters.years.size && !exportFilters.years.has(getYear(getCheckDate(check)))) return false;
@@ -1611,6 +1701,7 @@ function toExportCheck(check) {
     country: check.country,
     location: check.location,
     date: getCheckDate(check),
+    category: check.category || "",
     notes: check.notes || "",
     lat: Number.isFinite(check.lat) ? check.lat : null,
     lng: Number.isFinite(check.lng) ? check.lng : null,

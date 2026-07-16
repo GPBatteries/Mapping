@@ -49,9 +49,21 @@
           <p class="panel-intro">Leg per keten en filiaal vast wat je ziet in het schap.</p>
           <form id="checkForm">
             <div class="field-group two">
-              <label>
+              <label class="chain-field">
                 Keten
-                <input id="chain" name="chain" required placeholder="Bijv. Carrefour" />
+                <input id="chain" name="chain" required autocomplete="off" placeholder="Bijv. Carrefour" />
+                <div id="chainSuggestions" class="suggestions" hidden></div>
+              </label>
+              <label>
+                Categorie
+                <select id="category" name="category" required>
+                  <option value="">Kies categorie</option>
+                  <option>FOOD</option>
+                  <option>DIY</option>
+                  <option>TOY</option>
+                  <option>CES</option>
+                  <option>Discount</option>
+                </select>
               </label>
               <label>
                 Land
@@ -188,6 +200,14 @@
           </div>
 
           <div class="export-filters">
+            <section class="export-filter">
+              <div class="export-filter__head">
+                <h3>Categorie</h3>
+                <button class="text-button compact" type="button" data-clear="categories">Wis</button>
+              </div>
+              <div class="filter-options" id="filterCategories"></div>
+            </section>
+
             <section class="export-filter">
               <div class="export-filter__head">
                 <h3>Land</h3>
