@@ -1612,3 +1612,11 @@ textarea:focus {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+
+.check-author {
+  display: inline-block;
+  margin: 2px 0 4px;
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 600;
+}

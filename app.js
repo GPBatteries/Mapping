@@ -279,7 +279,8 @@ function showApp(user) {
 function subscribeToChecks(user) {
   if (unsubscribeChecks) unsubscribeChecks();
 
-  const checksQuery = query(collection(firebase.db, COLLECTION_NAME), where("ownerUid", "==", user.uid));
+  // Alle ingelogde gebruikers zien alle checks (gedeeld team-overzicht).
+  const checksQuery = query(collection(firebase.db, COLLECTION_NAME));
   unsubscribeChecks = onSnapshot(
     checksQuery,
     (snapshot) => {
@@ -825,6 +826,13 @@ function renderCheckCards(container, list, emptyText) {
     card.querySelector(".visit-date").textContent = formatDate(getCheckDate(check));
     card.querySelector(".photo-count").textContent = `${(check.photos || []).length}`;
     card.querySelector(".notes").textContent = check.notes || "Geen notities.";
+
+    if (check.ownerEmail && check.ownerUid !== (currentUser && currentUser.uid)) {
+      const author = document.createElement("span");
+      author.className = "check-author";
+      author.textContent = `door ${check.ownerEmail}`;
+      card.querySelector("h3").insertAdjacentElement("afterend", author);
+    }
     card.querySelector(".delete-button").addEventListener("click", (event) => {
       event.stopPropagation();
       deleteCheck(check.id);
