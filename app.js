@@ -5,6 +5,7 @@ import {
   onAuthStateChanged,
   signInWithPopup,
   signOut,
+  updateProfile,
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js";
 import {
   addDoc,
@@ -48,6 +49,7 @@ const loginButton = document.querySelector("#loginButton");
 const loginButtonHeader = document.querySelector("#loginButtonHeader");
 const logoutButton = document.querySelector("#logoutButton");
 const userBadge = document.querySelector("#userBadge");
+const editNameButton = document.querySelector("#editNameButton");
 const navButtons = document.querySelectorAll(".top-nav button");
 const form = document.querySelector("#checkForm");
 const photoInput = document.querySelector("#photos");
@@ -145,6 +147,7 @@ visitDate.value = today;
 loginButton.addEventListener("click", login);
 loginButtonHeader.addEventListener("click", login);
 logoutButton.addEventListener("click", logout);
+editNameButton.addEventListener("click", changeName);
 navButtons.forEach((button) => button.addEventListener("click", () => setView(button.dataset.view)));
 photoInput.addEventListener("change", () => {
   renderPreview();
@@ -266,6 +269,7 @@ function showLogin() {
   loginButtonHeader.hidden = false;
   logoutButton.hidden = true;
   userBadge.hidden = true;
+  editNameButton.hidden = true;
   exportButton.hidden = true;
   closeExportDialog();
   setStatus("Niet ingelogd");
@@ -277,11 +281,32 @@ function showApp(user) {
   loginButtonHeader.hidden = true;
   logoutButton.hidden = !firebase;
   userBadge.hidden = !user;
+  editNameButton.hidden = !user;
   exportButton.hidden = false;
 
   if (user) {
-    userBadge.textContent = user.email || user.displayName || "Ingelogd";
+    userBadge.textContent = user.displayName || user.email || "Ingelogd";
     setStatus("Verbonden met Firebase");
+  }
+}
+
+async function changeName() {
+  if (!currentUser) return;
+  const proposed = prompt("Welke naam wil je tonen bij je storechecks?", currentUser.displayName || "");
+  if (proposed === null) return;
+
+  const trimmed = proposed.trim();
+  if (!trimmed) {
+    alert("Vul een naam in.");
+    return;
+  }
+
+  try {
+    await updateProfile(currentUser, { displayName: trimmed });
+    userBadge.textContent = trimmed;
+  } catch (error) {
+    console.error(error);
+    alert("Naam wijzigen is niet gelukt.");
   }
 }
 
@@ -398,6 +423,7 @@ async function saveCheck(event) {
       await addDoc(collection(firebase.db, COLLECTION_NAME), {
         ...baseCheck,
         ownerUid: currentUser.uid,
+        ownerName: currentUser.displayName || currentUser.email || "Onbekend",
         ownerEmail: currentUser.email || "",
         photos,
       });
@@ -862,10 +888,11 @@ function renderCheckCards(container, list, emptyText) {
     card.querySelector(".photo-count").textContent = `${(check.photos || []).length}`;
     card.querySelector(".notes").textContent = check.notes || "Geen notities.";
 
-    if (check.ownerEmail && check.ownerUid !== (currentUser && currentUser.uid)) {
+    const authorLabel = check.ownerName || check.ownerEmail;
+    if (authorLabel && check.ownerUid !== (currentUser && currentUser.uid)) {
       const author = document.createElement("span");
       author.className = "check-author";
-      author.textContent = `door ${check.ownerEmail}`;
+      author.textContent = `door ${authorLabel}`;
       card.querySelector("h3").insertAdjacentElement("afterend", author);
     }
     card.querySelector(".delete-button").addEventListener("click", (event) => {
