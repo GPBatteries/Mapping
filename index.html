@@ -19,6 +19,7 @@
           <button class="active" data-view="dashboard" type="button">Dashboard</button>
           <button data-view="stores" type="button">Winkels</button>
           <button data-view="map" type="button">Kaart</button>
+          <button data-view="analysis" type="button">Analyse</button>
         </nav>
         <div class="header-actions">
           <div id="userBadge" class="user-badge" hidden></div>
@@ -145,6 +146,56 @@
             </div>
             <div id="map" class="map-canvas"></div>
             <p class="map-hint">Sleep een marker om de locatie te corrigeren. Klik op een marker voor de checks van die winkel.</p>
+          </section>
+
+          <section id="analysisView" class="view-panel analysis-view" hidden>
+            <div class="collection-header">
+              <div>
+                <h2>AI-analyse</h2>
+                <p id="analysisSummary">Kies een land en/of periode en laat Claude de foto's en notities analyseren.</p>
+              </div>
+            </div>
+            <form id="analysisForm" class="analysis-form">
+              <div class="field-group two">
+                <label>
+                  Land
+                  <select id="analysisCountry">
+                    <option value="">Alle landen</option>
+                  </select>
+                </label>
+                <label>
+                  Keten
+                  <select id="analysisChain">
+                    <option value="">Alle ketens</option>
+                  </select>
+                </label>
+              </div>
+              <div class="field-group two">
+                <label>
+                  Periode
+                  <select id="analysisPeriod">
+                    <option value="all">Alle periodes</option>
+                    <option value="month">Specifieke maand</option>
+                    <option value="year">Specifiek jaar</option>
+                  </select>
+                </label>
+                <label id="analysisMonthLabel" hidden>
+                  Maand
+                  <input id="analysisMonth" type="month" />
+                </label>
+                <label id="analysisYearLabel" hidden>
+                  Jaar
+                  <input id="analysisYear" type="number" min="2000" max="2100" placeholder="2026" />
+                </label>
+              </div>
+              <label>
+                Extra vraag voor Claude (optioneel)
+                <textarea id="analysisInstructions" rows="2" placeholder="Bijv. focus op prijzen van huismerken of nieuwe launches"></textarea>
+              </label>
+              <button class="primary-button" id="analysisRunButton" type="submit">Analyseer storechecks</button>
+            </form>
+            <p id="analysisStatus" class="analysis-status" aria-live="polite"></p>
+            <div id="analysisResult" class="analysis-result" aria-live="polite"></div>
           </section>
 
           <section id="storesView" class="view-panel stores-view" hidden>
@@ -280,6 +331,7 @@
         }
       });
     </script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/marked/12.0.2/marked.min.js"></script>
     <script type="module" src="app.js"></script>
   </body>
 </html>
