@@ -26,6 +26,7 @@ import {
   ref,
   uploadBytes,
 } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-storage.js";
+import { getFunctions, httpsCallable } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-functions.js";
 import * as firebaseConfigModule from "./firebase-config.js";
 
 const firebaseConfig = firebaseConfigModule.firebaseConfig || window.firebaseConfig || {};
@@ -102,6 +103,20 @@ const checkEditorMeta = document.querySelector("#checkEditorMeta");
 const checkEditorPhotos = document.querySelector("#checkEditorPhotos");
 const checkEditorFiles = document.querySelector("#checkEditorFiles");
 const checkEditorUpload = document.querySelector("#checkEditorUpload");
+const analysisView = document.querySelector("#analysisView");
+const analysisForm = document.querySelector("#analysisForm");
+const analysisCountry = document.querySelector("#analysisCountry");
+const analysisChain = document.querySelector("#analysisChain");
+const analysisPeriod = document.querySelector("#analysisPeriod");
+const analysisMonthLabel = document.querySelector("#analysisMonthLabel");
+const analysisYearLabel = document.querySelector("#analysisYearLabel");
+const analysisMonth = document.querySelector("#analysisMonth");
+const analysisYear = document.querySelector("#analysisYear");
+const analysisInstructions = document.querySelector("#analysisInstructions");
+const analysisRunButton = document.querySelector("#analysisRunButton");
+const analysisStatus = document.querySelector("#analysisStatus");
+const analysisResult = document.querySelector("#analysisResult");
+let analysisFiltersReady = false;
 
 let checks = [];
 let firebase = null;
@@ -189,6 +204,8 @@ checkEditor.addEventListener("click", (event) => {
   if (event.target === checkEditor) closeCheckEditor();
 });
 checkEditorUpload.addEventListener("click", addPhotosToEditingCheck);
+analysisPeriod.addEventListener("change", updateAnalysisPeriodFields);
+analysisForm.addEventListener("submit", runAnalysis);
 document.addEventListener("keydown", (event) => {
   if (event.key === "Escape") {
     closePhotoViewer();
@@ -241,6 +258,7 @@ function createFirebaseClient() {
 
   const initializedApp = initializeApp(firebaseConfig);
   return {
+    app: initializedApp,
     auth: getAuth(initializedApp),
     db: getFirestore(initializedApp),
     provider: new GoogleAuthProvider(),
@@ -415,6 +433,12 @@ async function saveCheck(event) {
       baseCheck.lat = coords.lat;
       baseCheck.lng = coords.lng;
       baseCheck.geoSource = coords.geoSource;
+    }
+
+    if (!baseCheck.location && coords) {
+      saveButton.textContent = "Adres opzoeken...";
+      const address = await reverseGeocodeCoords(coords).catch(() => null);
+      if (address) baseCheck.location = address;
     }
     saveButton.textContent = firebase ? "Uploaden..." : "Opslaan...";
 
@@ -846,11 +870,147 @@ function setView(view) {
   dashboardView.hidden = currentView !== "dashboard";
   storesView.hidden = currentView !== "stores";
   mapView.hidden = currentView !== "map";
+  analysisView.hidden = currentView !== "analysis";
   navButtons.forEach((button) => {
     button.classList.toggle("active", button.dataset.view === currentView);
   });
   renderChecks();
   if (currentView === "map") showMap();
+  if (currentView === "analysis") renderAnalysisFilters();
+}
+
+function renderAnalysisFilters() {
+  const countries = [...new Set(checks.map((check) => check.country).filter(Boolean))].sort();
+  const chains = [...new Set(checks.map((check) => check.chain).filter(Boolean))].sort();
+
+  const previousCountry = analysisCountry.value;
+  analysisCountry.innerHTML = '<option value="">Alle landen</option>';
+  countries.forEach((country) => {
+    const option = document.createElement("option");
+    option.value = country;
+    option.textContent = country;
+    analysisCountry.append(option);
+  });
+  if (countries.includes(previousCountry)) analysisCountry.value = previousCountry;
+
+  const previousChain = analysisChain.value;
+  analysisChain.innerHTML = '<option value="">Alle ketens</option>';
+  chains.forEach((chain) => {
+    const option = document.createElement("option");
+    option.value = chain;
+    option.textContent = chain;
+    analysisChain.append(option);
+  });
+  if (chains.includes(previousChain)) analysisChain.value = previousChain;
+
+  analysisFiltersReady = true;
+}
+
+function updateAnalysisPeriodFields() {
+  const period = analysisPeriod.value;
+  analysisMonthLabel.hidden = period !== "month";
+  analysisYearLabel.hidden = period !== "year";
+}
+
+function filterChecksForAnalysis() {
+  const country = analysisCountry.value;
+  const chain = analysisChain.value;
+  const period = analysisPeriod.value;
+  const month = analysisMonth.value; // "YYYY-MM"
+  const year = analysisYear.value; // "YYYY"
+
+  return checks.filter((check) => {
+    if (country && check.country !== country) return false;
+    if (chain && check.chain !== chain) return false;
+    if (!check.visitDate) return period === "all";
+    if (period === "month" && month && !check.visitDate.startsWith(month)) return false;
+    if (period === "year" && year && !check.visitDate.startsWith(year)) return false;
+    return true;
+  });
+}
+
+function buildScopeLabel(filtered) {
+  const parts = [];
+  if (analysisCountry.value) parts.push(analysisCountry.value);
+  if (analysisChain.value) parts.push(analysisChain.value);
+  if (analysisPeriod.value === "month" && analysisMonth.value) parts.push(analysisMonth.value);
+  if (analysisPeriod.value === "year" && analysisYear.value) parts.push(analysisYear.value);
+  return parts.length ? parts.join(" - ") : `Alle storechecks (${filtered.length})`;
+}
+
+async function runAnalysis(event) {
+  event.preventDefault();
+  if (!firebase || !currentUser) {
+    alert("Log eerst in voordat je een analyse start.");
+    return;
+  }
+
+  const filtered = filterChecksForAnalysis();
+  if (!filtered.length) {
+    analysisStatus.textContent = "Geen storechecks gevonden voor deze filters.";
+    analysisResult.innerHTML = "";
+    return;
+  }
+
+  const totalPhotos = filtered.reduce((sum, c) => sum + (Array.isArray(c.photos) ? c.photos.length : 0), 0);
+  if (!totalPhotos) {
+    analysisStatus.textContent = "Deze storechecks bevatten geen foto's om te analyseren.";
+    analysisResult.innerHTML = "";
+    return;
+  }
+
+  const originalText = analysisRunButton.textContent;
+  analysisRunButton.disabled = true;
+  analysisRunButton.textContent = "Claude analyseert...";
+  analysisStatus.textContent =
+    totalPhotos > 20
+      ? `Bezig met analyseren van ${filtered.length} storecheck(s), ${totalPhotos} foto('s) in batches. Dit kan enkele minuten duren...`
+      : `Bezig met analyseren van ${filtered.length} storecheck(s), ${totalPhotos} foto('s)...`;
+  analysisResult.innerHTML = "";
+
+  try {
+    const payloadChecks = filtered.map((check) => ({
+      chain: check.chain || "",
+      category: check.category || "",
+      country: check.country || "",
+      location: check.location || "",
+      visitDate: check.visitDate || "",
+      notes: check.notes || "",
+      photos: (check.photos || [])
+        .map((photo) => ({ url: photoThumb(photo) || photoFull(photo), name: photo.name || "" }))
+        .filter((photo) => Boolean(photo.url)),
+    }));
+
+    const functions = getFunctions(firebase.app, "europe-west1");
+    const analyzeStoreChecks = httpsCallable(functions, "analyzeStoreChecks", { timeout: 540000 });
+    const response = await analyzeStoreChecks({
+      checks: payloadChecks,
+      scopeLabel: buildScopeLabel(filtered),
+      instructions: analysisInstructions.value.trim(),
+    });
+
+    const { report, checksAnalyzed, photosAnalyzed, batchCount, truncated, runCostUsd, spentThisMonthUsd, monthlyBudgetUsd } =
+      response.data;
+    const batchNote = batchCount > 1 ? ` (verwerkt in ${batchCount} batches en samengevoegd)` : "";
+    const costNote =
+      typeof runCostUsd === "number"
+        ? ` Kosten deze run: ~$${runCostUsd.toFixed(2)}. Deze maand: $${spentThisMonthUsd.toFixed(2)} / $${monthlyBudgetUsd.toFixed(2)} budget.`
+        : "";
+    analysisStatus.textContent = `Klaar: ${checksAnalyzed} storecheck(s), ${photosAnalyzed} foto('s) geanalyseerd${batchNote}.${
+      truncated ? " (Selectie ingekort om kosten te beperken.)" : ""
+    }${costNote}`;
+    analysisResult.innerHTML = window.marked ? window.marked.parse(report || "") : (report || "");
+  } catch (error) {
+    console.error(error);
+    if (error && error.code === "functions/resource-exhausted") {
+      analysisStatus.textContent = error.message || "Maandelijkse kostenlimiet bereikt. De analyse is niet gestart.";
+    } else {
+      analysisStatus.textContent = "Analyse is mislukt. Controleer de Cloud Function en je Anthropic API key.";
+    }
+  } finally {
+    analysisRunButton.disabled = false;
+    analysisRunButton.textContent = originalText;
+  }
 }
 
 function renderDashboardChecks() {
@@ -1290,11 +1450,20 @@ async function detectPhotoLocation() {
 
   if (coords) {
     pendingCoords = coords;
+    if (!locationInput.value.trim()) {
+      setLocationStatus(`Locatie uit foto (${formatCoords(coords)}) — adres opzoeken...`, "ok");
+      const address = await reverseGeocodeCoords(coords).catch(() => null);
+      if (address && !locationInput.value.trim()) {
+        locationInput.value = address;
+        setLocationStatus(`Locatie automatisch ingevuld uit foto: ${address}`, "ok");
+        return;
+      }
+    }
     setLocationStatus(`Locatie uit foto (${formatCoords(coords)})`, "ok");
     return;
   }
 
-  setLocationStatus("Geen GPS in de foto's. Kies de winkel via het zoekveld.", "warn");
+  setLocationStatus("Geen GPS in de foto's. Kies de winkel via het zoekveld (optioneel).", "warn");
 }
 
 async function readExifCoords(files) {
@@ -1475,6 +1644,24 @@ async function geocodeQuery(query) {
     lng: Number(results[0].lon),
     geoSource: "geocode",
   };
+}
+
+async function reverseGeocodeCoords(coords) {
+  if (!coords || !Number.isFinite(coords.lat) || !Number.isFinite(coords.lng)) return null;
+
+  const url = new URL("https://nominatim.openstreetmap.org/reverse");
+  url.searchParams.set("format", "jsonv2");
+  url.searchParams.set("addressdetails", "1");
+  url.searchParams.set("lat", String(coords.lat));
+  url.searchParams.set("lon", String(coords.lng));
+
+  const response = await fetch(url, { headers: { Accept: "application/json" } });
+  if (!response.ok) throw new Error("Reverse geocoding is niet bereikbaar.");
+
+  const result = await response.json();
+  if (!result || result.error) return null;
+
+  return suggestionTitle(result);
 }
 
 function geocodeText(check) {

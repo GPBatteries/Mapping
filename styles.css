@@ -332,6 +332,12 @@ fieldset {
   font-weight: 700;
 }
 
+.optional-hint {
+  color: rgba(255, 255, 255, 0.55);
+  font-weight: 600;
+  text-transform: none;
+}
+
 fieldset {
   margin: 0;
   padding: 0;
