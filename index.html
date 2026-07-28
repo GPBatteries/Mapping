@@ -40,7 +40,27 @@
           <p class="eyebrow">Beveiligde toegang</p>
           <h2>Welkom terug</h2>
           <p>Je foto's en winkelbezoeken worden na het inloggen opgeslagen in Firebase en zijn daarna beschikbaar op je andere apparaten.</p>
+          <p class="login-hint">Alleen accounts met een @goldepeak.com e-mailadres hebben toegang.</p>
           <button class="primary-button" id="loginButton" type="button">Inloggen met Google</button>
+
+          <div class="login-divider"><span>of</span></div>
+
+          <form id="emailAuthForm">
+            <label>
+              E-mailadres
+              <input id="emailAuthEmail" type="email" required autocomplete="email" placeholder="naam@goldepeak.com" />
+            </label>
+            <label>
+              Wachtwoord
+              <input id="emailAuthPassword" type="password" required autocomplete="current-password" minlength="6" placeholder="Minimaal 6 tekens" />
+            </label>
+            <button class="primary-button" id="emailAuthSubmit" type="submit">Inloggen</button>
+            <p id="emailAuthStatus" class="login-status" aria-live="polite"></p>
+            <div class="login-links">
+              <button class="link-button" id="emailAuthToggleMode" type="button">Nog geen account? Registreren</button>
+              <button class="link-button" id="emailAuthForgotPassword" type="button">Wachtwoord vergeten?</button>
+            </div>
+          </form>
         </div>
       </section>
 

@@ -1,8 +1,12 @@
 import { initializeApp } from "https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js";
 import {
   GoogleAuthProvider,
+  createUserWithEmailAndPassword,
   getAuth,
   onAuthStateChanged,
+  sendEmailVerification,
+  sendPasswordResetEmail,
+  signInWithEmailAndPassword,
   signInWithPopup,
   signOut,
   updateProfile,
@@ -34,6 +38,17 @@ const firebaseConfig = firebaseConfigModule.firebaseConfig || window.firebaseCon
 const STORAGE_KEY = "storechecks.v1";
 const COLLECTION_NAME = "storechecks";
 
+// Toegang: alleen accounts op dit domein, plus expliciete uitzonderingen (bv. voor testen).
+const ALLOWED_EMAIL_DOMAIN = "goldepeak.com";
+const ALLOWED_TEST_EMAILS = ["pieterhollanders2509@gmail.com"];
+
+function isAllowedUser(user) {
+  const email = (user && user.email || "").toLowerCase().trim();
+  if (!email) return false;
+  if (ALLOWED_TEST_EMAILS.includes(email)) return true;
+  return email.endsWith(`@${ALLOWED_EMAIL_DOMAIN}`);
+}
+
 // Fotokwaliteit. FULL_MAX is de versie die je in de ZIP-export krijgt.
 // Zet FULL_MAX op 0 als je originelen in volle resolutie wilt bewaren.
 const THUMB_MAX = 400;
@@ -47,6 +62,13 @@ const CACHE_CONTROL = "public, max-age=31536000";
 const appLayout = document.querySelector("#appLayout");
 const loginPortal = document.querySelector("#loginPortal");
 const loginButton = document.querySelector("#loginButton");
+const emailAuthForm = document.querySelector("#emailAuthForm");
+const emailAuthEmail = document.querySelector("#emailAuthEmail");
+const emailAuthPassword = document.querySelector("#emailAuthPassword");
+const emailAuthSubmit = document.querySelector("#emailAuthSubmit");
+const emailAuthStatus = document.querySelector("#emailAuthStatus");
+const emailAuthToggleMode = document.querySelector("#emailAuthToggleMode");
+const emailAuthForgotPassword = document.querySelector("#emailAuthForgotPassword");
 const loginButtonHeader = document.querySelector("#loginButtonHeader");
 const logoutButton = document.querySelector("#logoutButton");
 const userBadge = document.querySelector("#userBadge");
@@ -134,6 +156,8 @@ let analysisFiltersReady = false;
 let checks = [];
 let firebase = null;
 let currentUser = null;
+let pendingStatusMessage = ""; // getoond zodra de auth terugvalt naar uitgelogd
+let emailAuthMode = "login"; // "login" of "register"
 let unsubscribeChecks = null;
 let currentView = "dashboard";
 let selectedStoreKey = "";
@@ -252,6 +276,16 @@ function startApp() {
 
   setStatus("Log in om Firebase te gebruiken");
   onAuthStateChanged(firebase.auth, (user) => {
+    if (user) {
+      const issue = getAccessIssue(user);
+      if (issue) {
+        pendingStatusMessage = issue;
+        currentUser = null;
+        signOut(firebase.auth);
+        return; // wacht op de user=null die hierna volgt
+      }
+    }
+
     currentUser = user;
     if (user) {
       showApp(user);
@@ -263,8 +297,22 @@ function startApp() {
     if (unsubscribeChecks) unsubscribeChecks();
     unsubscribeChecks = null;
     showLogin();
+    if (pendingStatusMessage) {
+      setStatus(pendingStatusMessage);
+      pendingStatusMessage = "";
+    }
     renderChecks();
   });
+}
+
+function getAccessIssue(user) {
+  if (!isAllowedUser(user)) {
+    return `Geen toegang: alleen @${ALLOWED_EMAIL_DOMAIN}-accounts kunnen inloggen.`;
+  }
+  if (!user.emailVerified) {
+    return "Bevestig eerst je e-mailadres via de link die we hebben gestuurd. Log daarna opnieuw in.";
+  }
+  return null;
 }
 
 function createFirebaseClient() {
@@ -289,6 +337,101 @@ async function login() {
   } catch (error) {
     console.error(error);
     alert("Inloggen is niet gelukt. Controleer of Google Authentication aanstaat in Firebase.");
+  }
+}
+
+function setEmailAuthStatus(text, tone = "") {
+  emailAuthStatus.textContent = text;
+  emailAuthStatus.className = `login-status ${tone}`.trim();
+}
+
+function updateEmailAuthModeUI() {
+  const isRegister = emailAuthMode === "register";
+  emailAuthSubmit.textContent = isRegister ? "Account aanmaken" : "Inloggen";
+  emailAuthToggleMode.textContent = isRegister ? "Al een account? Inloggen" : "Nog geen account? Registreren";
+  emailAuthForgotPassword.hidden = isRegister;
+  emailAuthPassword.autocomplete = isRegister ? "new-password" : "current-password";
+}
+
+emailAuthToggleMode.addEventListener("click", () => {
+  emailAuthMode = emailAuthMode === "login" ? "register" : "login";
+  setEmailAuthStatus("");
+  updateEmailAuthModeUI();
+});
+
+emailAuthForm.addEventListener("submit", async (event) => {
+  event.preventDefault();
+  if (!firebase) return;
+
+  const email = emailAuthEmail.value.trim();
+  const password = emailAuthPassword.value;
+
+  if (!isAllowedUser({ email })) {
+    setEmailAuthStatus(`Alleen @${ALLOWED_EMAIL_DOMAIN}-adressen kunnen een account aanmaken.`, "error");
+    return;
+  }
+
+  const originalText = emailAuthSubmit.textContent;
+  emailAuthSubmit.disabled = true;
+
+  try {
+    if (emailAuthMode === "register") {
+      emailAuthSubmit.textContent = "Account aanmaken...";
+      const credential = await createUserWithEmailAndPassword(firebase.auth, email, password);
+      await sendEmailVerification(credential.user);
+      await signOut(firebase.auth);
+      emailAuthMode = "login";
+      updateEmailAuthModeUI();
+      emailAuthPassword.value = "";
+      setEmailAuthStatus("Account aangemaakt! Check je mail en klik op de verificatielink, log daarna hier in.", "success");
+    } else {
+      emailAuthSubmit.textContent = "Inloggen...";
+      await signInWithEmailAndPassword(firebase.auth, email, password);
+      // onAuthStateChanged handelt de rest af (incl. verificatie-check).
+    }
+  } catch (error) {
+    console.error(error);
+    setEmailAuthStatus(emailAuthErrorMessage(error), "error");
+  } finally {
+    emailAuthSubmit.disabled = false;
+    emailAuthSubmit.textContent = originalText;
+  }
+});
+
+emailAuthForgotPassword.addEventListener("click", async () => {
+  if (!firebase) return;
+  const email = emailAuthEmail.value.trim();
+  if (!email) {
+    setEmailAuthStatus("Vul eerst je e-mailadres in.", "error");
+    return;
+  }
+
+  try {
+    await sendPasswordResetEmail(firebase.auth, email);
+    setEmailAuthStatus("Check je mail voor een link om je wachtwoord opnieuw in te stellen.", "success");
+  } catch (error) {
+    console.error(error);
+    setEmailAuthStatus(emailAuthErrorMessage(error), "error");
+  }
+});
+
+function emailAuthErrorMessage(error) {
+  const code = error && error.code;
+  switch (code) {
+    case "auth/email-already-in-use":
+      return "Dit e-mailadres heeft al een account. Kies 'Inloggen' in plaats van registreren.";
+    case "auth/invalid-email":
+      return "Dit e-mailadres is ongeldig.";
+    case "auth/weak-password":
+      return "Kies een wachtwoord van minimaal 6 tekens.";
+    case "auth/user-not-found":
+    case "auth/invalid-credential":
+    case "auth/wrong-password":
+      return "E-mailadres en/of wachtwoord klopt niet.";
+    case "auth/too-many-requests":
+      return "Te veel pogingen. Probeer het later opnieuw.";
+    default:
+      return "Er ging iets mis. Probeer het opnieuw.";
   }
 }
 

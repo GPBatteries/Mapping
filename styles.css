@@ -277,6 +277,77 @@ h2 {
   line-height: 1.55;
 }
 
+.login-panel p.login-hint {
+  color: rgba(255, 255, 255, 0.62);
+  font-size: 0.82rem;
+}
+
+.login-divider {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: var(--space-4) 0;
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-transform: uppercase;
+}
+
+.login-divider::before,
+.login-divider::after {
+  content: "";
+  flex: 1;
+  height: 1px;
+  background: rgba(255, 255, 255, 0.18);
+}
+
+#emailAuthForm {
+  gap: var(--space-3);
+}
+
+.login-links {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: 8px;
+  margin-top: -2px;
+}
+
+.login-status {
+  margin: -4px 0 0;
+  color: rgba(255, 255, 255, 0.8);
+  font-size: 0.82rem;
+  font-weight: 650;
+}
+
+.login-status:empty {
+  display: none;
+}
+
+.login-status.error {
+  color: #ffd7c2;
+}
+
+.login-status.success {
+  color: #d7ffb0;
+}
+
+.link-button {
+  border: 0;
+  padding: 4px 0;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.72);
+  cursor: pointer;
+  font-size: 0.78rem;
+  font-weight: 700;
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+
+.link-button:hover {
+  color: #ffffff;
+}
+
 .eyebrow,
 .panel-kicker {
   margin: 0 0 8px;
