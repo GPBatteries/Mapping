@@ -107,6 +107,15 @@ const checkEditorMeta = document.querySelector("#checkEditorMeta");
 const checkEditorPhotos = document.querySelector("#checkEditorPhotos");
 const checkEditorFiles = document.querySelector("#checkEditorFiles");
 const checkEditorUpload = document.querySelector("#checkEditorUpload");
+const checkEditorLockNote = document.querySelector("#checkEditorLockNote");
+const checkEditorFields = document.querySelector("#checkEditorFields");
+const checkEditorChain = document.querySelector("#checkEditorChain");
+const checkEditorCategory = document.querySelector("#checkEditorCategory");
+const checkEditorCountry = document.querySelector("#checkEditorCountry");
+const checkEditorLocation = document.querySelector("#checkEditorLocation");
+const checkEditorVisitDate = document.querySelector("#checkEditorVisitDate");
+const checkEditorNotes = document.querySelector("#checkEditorNotes");
+const checkEditorFieldsSave = document.querySelector("#checkEditorFieldsSave");
 const analysisView = document.querySelector("#analysisView");
 const analysisForm = document.querySelector("#analysisForm");
 const analysisCountry = document.querySelector("#analysisCountry");
@@ -210,6 +219,7 @@ checkEditor.addEventListener("click", (event) => {
   if (event.target === checkEditor) closeCheckEditor();
 });
 checkEditorUpload.addEventListener("click", addPhotosToEditingCheck);
+checkEditorFieldsSave.addEventListener("click", saveCheckFields);
 analysisPeriod.addEventListener("change", updateAnalysisPeriodFields);
 analysisForm.addEventListener("submit", runAnalysis);
 document.addEventListener("keydown", (event) => {
@@ -1134,6 +1144,30 @@ function renderCheckEditor() {
 
   checkEditorTitle.textContent = check.chain || "Storecheck";
   checkEditorMeta.textContent = `${check.location || "Onbekend filiaal"} - ${formatDate(getCheckDate(check))}`;
+
+  const canEdit = !check.ownerUid || !currentUser || check.ownerUid === currentUser.uid;
+  checkEditorLockNote.hidden = canEdit;
+  checkEditorChain.value = check.chain || "";
+  checkEditorCategory.value = check.category || "";
+  checkEditorCountry.value = check.country || "";
+  checkEditorLocation.value = check.location || "";
+  checkEditorVisitDate.value = check.visitDate || "";
+  checkEditorNotes.value = check.notes || "";
+
+  [
+    checkEditorChain,
+    checkEditorCategory,
+    checkEditorCountry,
+    checkEditorLocation,
+    checkEditorVisitDate,
+    checkEditorNotes,
+    checkEditorFieldsSave,
+    checkEditorFiles,
+    checkEditorUpload,
+  ].forEach((el) => {
+    el.disabled = !canEdit;
+  });
+
   checkEditorPhotos.innerHTML = "";
 
   if (!(check.photos || []).length) {
@@ -1157,20 +1191,73 @@ function renderCheckEditor() {
     const label = document.createElement("span");
     label.textContent = photo.name || `Foto ${index + 1}`;
 
-    const button = document.createElement("button");
-    button.type = "button";
-    button.textContent = "Verwijderen";
-    button.addEventListener("click", () => removePhotoFromEditingCheck(index));
+    item.append(img, label);
 
-    item.append(img, label, button);
+    if (canEdit) {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = "Verwijderen";
+      button.addEventListener("click", () => removePhotoFromEditingCheck(index));
+      item.append(button);
+    }
+
     checkEditorPhotos.append(item);
   });
+}
+
+async function saveCheckFields() {
+  const check = checks.find((item) => item.id === editingCheckId);
+  if (!check) return;
+
+  const canEdit = !check.ownerUid || !currentUser || check.ownerUid === currentUser.uid;
+  if (!canEdit) {
+    alert("Je kunt alleen storechecks bewerken die je zelf hebt toegevoegd.");
+    return;
+  }
+
+  const updates = {
+    chain: checkEditorChain.value.trim(),
+    category: checkEditorCategory.value,
+    country: checkEditorCountry.value,
+    location: checkEditorLocation.value.trim(),
+    visitDate: checkEditorVisitDate.value,
+    notes: checkEditorNotes.value.trim(),
+  };
+
+  if (!updates.chain || !updates.category || !updates.country || !updates.visitDate) {
+    alert("Vul minimaal keten, categorie, land en datum in.");
+    return;
+  }
+
+  const originalText = checkEditorFieldsSave.textContent;
+  checkEditorFieldsSave.disabled = true;
+  checkEditorFieldsSave.textContent = "Opslaan...";
+
+  try {
+    if (firebase) {
+      await updateDoc(doc(firebase.db, COLLECTION_NAME, check.id), updates);
+    }
+    checks = checks.map((item) => (item.id === check.id ? { ...item, ...updates } : item));
+    if (!firebase) persistLocal();
+    renderChecks();
+    renderCheckEditor();
+  } catch (error) {
+    console.error(error);
+    alert("Opslaan van de wijzigingen is niet gelukt.");
+  } finally {
+    checkEditorFieldsSave.disabled = false;
+    checkEditorFieldsSave.textContent = originalText;
+  }
 }
 
 async function addPhotosToEditingCheck() {
   const check = checks.find((item) => item.id === editingCheckId);
   const files = [...checkEditorFiles.files];
   if (!check || !files.length) return;
+  if (check.ownerUid && currentUser && check.ownerUid !== currentUser.uid) {
+    alert("Je kunt alleen storechecks bewerken die je zelf hebt toegevoegd.");
+    return;
+  }
 
   const originalText = checkEditorUpload.textContent;
   checkEditorUpload.disabled = true;
@@ -1195,6 +1282,10 @@ async function addPhotosToEditingCheck() {
 async function removePhotoFromEditingCheck(photoIndex) {
   const check = checks.find((item) => item.id === editingCheckId);
   if (!check) return;
+  if (check.ownerUid && currentUser && check.ownerUid !== currentUser.uid) {
+    alert("Je kunt alleen storechecks bewerken die je zelf hebt toegevoegd.");
+    return;
+  }
 
   const photo = (check.photos || [])[photoIndex];
   if (!photo || !confirm("Deze foto verwijderen?")) return;

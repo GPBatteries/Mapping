@@ -1022,6 +1022,67 @@ textarea:focus {
   color: var(--muted);
 }
 
+.check-editor__lock-note {
+  margin: -6px 0 var(--space-4);
+  padding: 10px 12px;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-sm);
+  background: var(--panel-muted);
+  color: var(--muted);
+  font-size: 0.86rem;
+  font-weight: 600;
+}
+
+.check-editor__fields {
+  display: grid;
+  gap: var(--space-3);
+  margin-bottom: var(--space-5);
+  padding-bottom: var(--space-5);
+  border-bottom: 1px solid var(--line);
+}
+
+.check-editor__fields label {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 700;
+}
+
+.check-editor__fields input,
+.check-editor__fields select,
+.check-editor__fields textarea {
+  border: 1px solid var(--line);
+  background: var(--panel-muted);
+  color: var(--text);
+}
+
+.check-editor__fields input:focus,
+.check-editor__fields select:focus,
+.check-editor__fields textarea:focus {
+  border-color: var(--brand);
+  background: #ffffff;
+  outline: 3px solid var(--brand-soft);
+}
+
+.check-editor__fields input:disabled,
+.check-editor__fields select:disabled,
+.check-editor__fields textarea:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+.check-editor__hint {
+  margin: -6px 0 0;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.check-editor__subheading {
+  margin-bottom: var(--space-3);
+  color: var(--text);
+  font-size: 0.9rem;
+  font-weight: 700;
+}
+
 .editor-photos {
   display: grid;
   grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));

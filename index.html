@@ -296,16 +296,70 @@
         </section>
       </div>
 
-      <div id="checkEditor" class="check-editor" role="dialog" aria-modal="true" aria-label="Storecheck foto's beheren" hidden>
+      <div id="checkEditor" class="check-editor" role="dialog" aria-modal="true" aria-label="Storecheck bewerken" hidden>
         <section class="check-editor__panel">
           <div class="check-editor__header">
             <div>
-              <p class="eyebrow">Foto's beheren</p>
+              <p class="eyebrow">Storecheck</p>
               <h2 id="checkEditorTitle">Storecheck</h2>
               <p id="checkEditorMeta"></p>
             </div>
             <button class="photo-viewer__close" id="checkEditorClose" type="button" aria-label="Sluiten">x</button>
           </div>
+
+          <p id="checkEditorLockNote" class="check-editor__lock-note" hidden>
+            Je kunt alleen storechecks bewerken die je zelf hebt toegevoegd.
+          </p>
+
+          <div id="checkEditorFields" class="check-editor__fields">
+            <div class="field-group two">
+              <label>
+                Keten
+                <input id="checkEditorChain" type="text" />
+              </label>
+              <label>
+                Categorie
+                <select id="checkEditorCategory">
+                  <option value="">Kies categorie</option>
+                  <option>FOOD</option>
+                  <option>DIY</option>
+                  <option>TOY</option>
+                  <option>CES</option>
+                  <option>Discount</option>
+                </select>
+              </label>
+            </div>
+            <div class="field-group two">
+              <label>
+                Land
+                <select id="checkEditorCountry">
+                  <option value="">Kies land</option>
+                  <option>Italie</option>
+                  <option>Frankrijk</option>
+                  <option>Nederland</option>
+                  <option>Duitsland</option>
+                  <option>Belgie</option>
+                  <option>Spanje</option>
+                </select>
+              </label>
+              <label>
+                Datum bezoek
+                <input id="checkEditorVisitDate" type="date" />
+              </label>
+            </div>
+            <label>
+              Filiaal / locatie
+              <input id="checkEditorLocation" type="text" />
+            </label>
+            <p class="check-editor__hint">Let op: de kaartpositie wordt niet automatisch bijgewerkt als je de locatietekst wijzigt.</p>
+            <label>
+              Notities
+              <textarea id="checkEditorNotes" rows="3"></textarea>
+            </label>
+            <button class="primary-button compact" id="checkEditorFieldsSave" type="button">Wijzigingen opslaan</button>
+          </div>
+
+          <h3 class="check-editor__subheading">Foto's</h3>
           <div id="checkEditorPhotos" class="editor-photos"></div>
           <label class="editor-upload">
             Extra foto's toevoegen
