@@ -39,7 +39,7 @@ const STORAGE_KEY = "storechecks.v1";
 const COLLECTION_NAME = "storechecks";
 
 // Toegang: alleen accounts op dit domein, plus expliciete uitzonderingen (bv. voor testen).
-const ALLOWED_EMAIL_DOMAIN = "goldepeak.com";
+const ALLOWED_EMAIL_DOMAIN = "goldpeak.com";
 const ALLOWED_TEST_EMAILS = ["pieterhollanders2509@gmail.com"];
 
 function isAllowedUser(user) {
