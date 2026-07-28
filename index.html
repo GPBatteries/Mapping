@@ -205,7 +205,10 @@
                 <p id="storesSummary">Nog geen winkels opgeslagen.</p>
               </div>
             </div>
-            <div class="stores-layout">
+            <div id="storeCountryFilter" class="chip-row" aria-label="Kies een land"></div>
+            <div id="storeCategoryFilter" class="chip-row chip-row--secondary" aria-label="Filter op categorie" hidden></div>
+            <p id="storesEmptyHint" class="stores-empty-hint" hidden>Kies hierboven een land om de winkels te bekijken.</p>
+            <div class="stores-layout" id="storesLayout">
               <div id="storesList" class="stores-list" aria-live="polite"></div>
               <div id="storeChecks" class="checks store-checks" aria-live="polite"></div>
             </div>

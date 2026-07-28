@@ -72,6 +72,10 @@ const locationStatus = document.querySelector("#locationStatus");
 const checksEl = document.querySelector("#checks");
 const storesList = document.querySelector("#storesList");
 const storeChecks = document.querySelector("#storeChecks");
+const storeCountryFilter = document.querySelector("#storeCountryFilter");
+const storeCategoryFilter = document.querySelector("#storeCategoryFilter");
+const storesEmptyHint = document.querySelector("#storesEmptyHint");
+const storesLayout = document.querySelector("#storesLayout");
 const template = document.querySelector("#checkTemplate");
 const summary = document.querySelector("#summary");
 const storesSummary = document.querySelector("#storesSummary");
@@ -124,6 +128,8 @@ let currentUser = null;
 let unsubscribeChecks = null;
 let currentView = "dashboard";
 let selectedStoreKey = "";
+let selectedStoreCountry = ""; // "" = nog geen land gekozen, "__all__" = alle landen
+let selectedStoreCategory = ""; // "" = alle categorieen
 let editingCheckId = "";
 let viewerPhotos = [];
 let viewerPhotoIndex = 0;
@@ -1265,14 +1271,125 @@ function closePhotoViewer() {
 }
 
 function renderStores() {
-  const stores = getStores();
+  const countries = [...new Set(checks.map((check) => check.country).filter(Boolean))].sort();
+
+  if (!countries.length) {
+    storeCountryFilter.innerHTML = "";
+    storeCategoryFilter.hidden = true;
+    storeCategoryFilter.innerHTML = "";
+    storesLayout.hidden = true;
+    storesEmptyHint.hidden = false;
+    storesEmptyHint.textContent = "Sla eerst een storecheck op.";
+    storesSummary.textContent = "Nog geen winkels opgeslagen.";
+    return;
+  }
+
+  if (selectedStoreCountry && selectedStoreCountry !== "__all__" && !countries.includes(selectedStoreCountry)) {
+    selectedStoreCountry = "";
+  }
+
+  // --- Land-chips ---
+  storeCountryFilter.innerHTML = "";
+  countries.forEach((country) => {
+    const count = checks.filter((check) => check.country === country).length;
+    const chip = document.createElement("button");
+    chip.type = "button";
+    chip.className = "chip";
+    chip.classList.toggle("active", selectedStoreCountry === country);
+    chip.innerHTML = `${escapeHtml(country)}<span class="chip-count">${count}</span>`;
+    chip.addEventListener("click", () => {
+      selectedStoreCountry = selectedStoreCountry === country ? "" : country;
+      selectedStoreKey = "";
+      renderStores();
+    });
+    storeCountryFilter.append(chip);
+  });
+
+  const allChip = document.createElement("button");
+  allChip.type = "button";
+  allChip.className = "chip";
+  allChip.classList.toggle("active", selectedStoreCountry === "__all__");
+  allChip.innerHTML = `Alle landen<span class="chip-count">${checks.length}</span>`;
+  allChip.addEventListener("click", () => {
+    selectedStoreCountry = selectedStoreCountry === "__all__" ? "" : "__all__";
+    selectedStoreKey = "";
+    renderStores();
+  });
+  storeCountryFilter.append(allChip);
+
+  // --- Nog geen land gekozen: toon prompt, verberg de rest ---
+  if (!selectedStoreCountry) {
+    storeCategoryFilter.hidden = true;
+    storeCategoryFilter.innerHTML = "";
+    storesLayout.hidden = true;
+    storesEmptyHint.hidden = false;
+    storesEmptyHint.textContent = "Kies hierboven een land om de winkels te bekijken.";
+    storesSummary.textContent = `${countries.length} land${countries.length === 1 ? "" : "en"} met opgeslagen checks`;
+    return;
+  }
+
+  storesEmptyHint.hidden = true;
+  storesLayout.hidden = false;
+
+  const countryChecks =
+    selectedStoreCountry === "__all__" ? checks : checks.filter((check) => check.country === selectedStoreCountry);
+
+  // --- Categorie-chips (alleen categorieen die in dit land voorkomen) ---
+  const categoriesHere = [...new Set(countryChecks.map((check) => check.category).filter(Boolean))].sort();
+  if (selectedStoreCategory && !categoriesHere.includes(selectedStoreCategory)) {
+    selectedStoreCategory = "";
+  }
+
+  if (categoriesHere.length > 1) {
+    storeCategoryFilter.hidden = false;
+    storeCategoryFilter.innerHTML = "";
+
+    const allCatChip = document.createElement("button");
+    allCatChip.type = "button";
+    allCatChip.className = "chip";
+    allCatChip.classList.toggle("active", !selectedStoreCategory);
+    allCatChip.innerHTML = `Alle categorieen<span class="chip-count">${countryChecks.length}</span>`;
+    allCatChip.addEventListener("click", () => {
+      selectedStoreCategory = "";
+      selectedStoreKey = "";
+      renderStores();
+    });
+    storeCategoryFilter.append(allCatChip);
+
+    categoriesHere.forEach((category) => {
+      const count = countryChecks.filter((check) => check.category === category).length;
+      const chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = "chip";
+      chip.classList.toggle("active", selectedStoreCategory === category);
+      chip.innerHTML = `${escapeHtml(category)}<span class="chip-count">${count}</span>`;
+      chip.addEventListener("click", () => {
+        selectedStoreCategory = selectedStoreCategory === category ? "" : category;
+        selectedStoreKey = "";
+        renderStores();
+      });
+      storeCategoryFilter.append(chip);
+    });
+  } else {
+    storeCategoryFilter.hidden = true;
+    storeCategoryFilter.innerHTML = "";
+  }
+
+  const filteredChecks = selectedStoreCategory
+    ? countryChecks.filter((check) => check.category === selectedStoreCategory)
+    : countryChecks;
+
+  const stores = groupIntoStores(filteredChecks);
   storesList.innerHTML = "";
+
+  const countryLabel = selectedStoreCountry === "__all__" ? "alle landen" : selectedStoreCountry;
+  const categoryLabel = selectedStoreCategory ? ` in categorie ${selectedStoreCategory}` : "";
   storesSummary.textContent = stores.length
-    ? `${stores.length} winkel${stores.length === 1 ? "" : "s"} met opgeslagen checks`
-    : "Nog geen winkels opgeslagen.";
+    ? `${stores.length} winkel${stores.length === 1 ? "" : "s"} in ${countryLabel}${categoryLabel}`
+    : `Geen winkels gevonden in ${countryLabel}${categoryLabel}.`;
 
   if (!stores.length) {
-    renderCheckCards(storeChecks, [], "Sla eerst een storecheck op.");
+    renderCheckCards(storeChecks, [], "Geen checks gevonden voor deze filters.");
     return;
   }
 
@@ -1288,7 +1405,7 @@ function renderStores() {
     button.innerHTML = `
       <span>
         <strong>${escapeHtml(store.chain)}</strong>
-        <small>${escapeHtml(store.location)} · ${escapeHtml(store.country)}</small>
+        <small>${escapeHtml(store.location)}${selectedStoreCountry === "__all__" ? ` · ${escapeHtml(store.country)}` : ""}</small>
       </span>
       <em>${store.checks.length}</em>
     `;
@@ -1788,6 +1905,8 @@ function renderMarkers() {
       if (button) {
         button.addEventListener("click", () => {
           selectedStoreKey = store.key;
+          selectedStoreCountry = store.country && checks.some((check) => check.country === store.country) ? store.country : "__all__";
+          selectedStoreCategory = "";
           setView("stores");
         });
       }
@@ -1877,9 +1996,9 @@ function getCountries() {
   return [...new Set(checks.map((check) => check.country).filter(Boolean))].sort();
 }
 
-function getStores() {
+function groupIntoStores(list) {
   const grouped = new Map();
-  checks.forEach((check) => {
+  list.forEach((check) => {
     const key = getStoreKey(check);
     if (!grouped.has(key)) {
       grouped.set(key, {
@@ -1894,6 +2013,10 @@ function getStores() {
   });
 
   return [...grouped.values()].sort((a, b) => a.chain.localeCompare(b.chain) || a.location.localeCompare(b.location));
+}
+
+function getStores() {
+  return groupIntoStores(checks);
 }
 
 function getYears() {

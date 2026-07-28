@@ -772,6 +772,65 @@ textarea:focus {
   min-height: 420px;
 }
 
+.chip-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  padding: 0 var(--space-5);
+}
+
+.chip-row--secondary {
+  padding-top: 2px;
+}
+
+.chip {
+  border: 1px solid var(--line);
+  padding: 8px 14px;
+  border-radius: 999px;
+  background: #ffffff;
+  color: var(--text);
+  cursor: pointer;
+  font-size: 0.85rem;
+  font-weight: 650;
+  transition: border-color 0.12s ease, background 0.12s ease, color 0.12s ease;
+}
+
+.chip:hover {
+  border-color: var(--line-strong);
+  background: var(--panel-muted);
+}
+
+.chip .chip-count {
+  margin-left: 6px;
+  color: var(--muted);
+  font-weight: 600;
+}
+
+.chip.active {
+  border-color: var(--brand);
+  background: var(--brand);
+  color: #ffffff;
+}
+
+.chip.active .chip-count {
+  color: rgba(255, 255, 255, 0.8);
+}
+
+.chip-row--secondary .chip {
+  padding: 6px 12px;
+  font-size: 0.8rem;
+}
+
+.stores-empty-hint {
+  margin: 0 var(--space-5);
+  padding: 32px;
+  border: 1px dashed var(--line-strong);
+  border-radius: var(--radius-md);
+  color: var(--muted);
+  font-size: 0.92rem;
+  text-align: center;
+}
+
 .stores-list {
   display: grid;
   align-content: start;
@@ -1149,6 +1208,14 @@ textarea:focus {
 
   .collection-header {
     padding: var(--space-4);
+  }
+
+  .chip-row {
+    padding: 0 var(--space-4);
+  }
+
+  .stores-empty-hint {
+    margin: 0 var(--space-4);
   }
 
   .checks {
