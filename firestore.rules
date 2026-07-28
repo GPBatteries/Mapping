@@ -1,0 +1,60 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function isSignedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(existingData) {
+      return existingData.ownerUid == request.auth.uid;
+    }
+
+    // Toegestaan: iedereen mag een pin op de kaart corrigeren (marker slepen /
+    // "ontbrekende locaties opzoeken"), zonder dat daarmee de rest van de check
+    // (notities, datum, etc.) aangepast kan worden.
+    function onlyCoordsChanged() {
+      let changedKeys = request.resource.data.diff(resource.data).affectedKeys();
+      return changedKeys.hasOnly(['lat', 'lng', 'geoSource']);
+    }
+
+    function ownerUidUnchanged() {
+      return request.resource.data.ownerUid == resource.data.ownerUid;
+    }
+
+    match /storechecks/{checkId} {
+      // Iedereen die is ingelogd mag alle storechecks zien (gedeeld teamoverzicht).
+      allow read: if isSignedIn();
+
+      // Aanmaken mag alleen als je jezelf als eigenaar registreert, met de
+      // verplichte basisvelden ingevuld.
+      allow create: if isSignedIn()
+        && request.resource.data.ownerUid == request.auth.uid
+        && request.resource.data.chain is string && request.resource.data.chain.size() > 0
+        && request.resource.data.category is string && request.resource.data.category.size() > 0
+        && request.resource.data.country is string && request.resource.data.country.size() > 0
+        && request.resource.data.visitDate is string && request.resource.data.visitDate.size() > 0;
+
+      // Bewerken (notities, datum, keten, categorie, land, locatie, foto's) mag
+      // alleen door de eigenaar. Uitzondering: coordinaten corrigeren op de kaart
+      // mag door elk ingelogd teamlid, ongeacht wie de check heeft toegevoegd.
+      allow update: if isSignedIn()
+        && ownerUidUnchanged()
+        && (isOwner(resource.data) || onlyCoordsChanged());
+
+      // Verwijderen: pas aan naar isOwner(resource.data) als je dit ook wilt
+      // beperken tot de eigenaar. Nu nog voor iedereen open, zoals de app dat
+      // vandaag ook al doet.
+      allow delete: if isSignedIn();
+    }
+
+    // Wordt uitsluitend gebruikt door de Cloud Function (analyzeStoreChecks) via
+    // de Admin SDK, die alle security rules bypasst. Er is bewust geen client-
+    // regel voor deze collectie: zonder expliciete "allow" blijft hij standaard
+    // ontoegankelijk voor de browser-app.
+    // match /aiUsage/{docId} { ... }
+
+    // Alles wat niet expliciet hierboven staat, blijft standaard dicht.
+  }
+}
