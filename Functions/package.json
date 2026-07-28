@@ -1,0 +1,13 @@
+{
+  "name": "storechecks-functions",
+  "description": "Cloud Functions voor Storechecks AI-analyse",
+  "main": "index.js",
+  "engines": {
+    "node": "20"
+  },
+  "dependencies": {
+    "firebase-functions": "^6.0.1",
+    "firebase-admin": "^12.6.0"
+  },
+  "private": true
+}
