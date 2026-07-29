@@ -1613,14 +1613,14 @@ function renderStores() {
     ? countryChecks.filter((check) => check.category === selectedStoreCategory)
     : countryChecks;
 
-  const stores = groupIntoStores(filteredChecks);
+  const stores = groupByChain(filteredChecks);
   storesList.innerHTML = "";
 
   const countryLabel = selectedStoreCountry === "__all__" ? "alle landen" : selectedStoreCountry;
   const categoryLabel = selectedStoreCategory ? ` in categorie ${selectedStoreCategory}` : "";
   storesSummary.textContent = stores.length
-    ? `${stores.length} winkel${stores.length === 1 ? "" : "s"} in ${countryLabel}${categoryLabel}`
-    : `Geen winkels gevonden in ${countryLabel}${categoryLabel}.`;
+    ? `${stores.length} keten${stores.length === 1 ? "" : "s"} in ${countryLabel}${categoryLabel}`
+    : `Geen ketens gevonden in ${countryLabel}${categoryLabel}.`;
 
   if (!stores.length) {
     renderCheckCards(storeChecks, [], "Geen checks gevonden voor deze filters.");
@@ -1639,7 +1639,7 @@ function renderStores() {
     button.innerHTML = `
       <span>
         <strong>${escapeHtml(store.chain)}</strong>
-        <small>${escapeHtml(store.location)}${selectedStoreCountry === "__all__" ? ` · ${escapeHtml(store.country)}` : ""}</small>
+        <small>${store.locationCount} vestiging${store.locationCount === 1 ? "" : "en"}</small>
       </span>
       <em>${store.checks.length}</em>
     `;
@@ -2138,7 +2138,7 @@ function renderMarkers() {
       const button = document.querySelector(`[data-store-open="${store.key}"]`);
       if (button) {
         button.addEventListener("click", () => {
-          selectedStoreKey = store.key;
+          selectedStoreKey = slugify(store.chain || "onbekende keten");
           selectedStoreCountry = store.country && checks.some((check) => check.country === store.country) ? store.country : "__all__";
           selectedStoreCategory = "";
           setView("stores");
@@ -2228,6 +2228,24 @@ function getExportFileName() {
 
 function getCountries() {
   return [...new Set(checks.map((check) => check.country).filter(Boolean))].sort();
+}
+
+function groupByChain(list) {
+  const grouped = new Map();
+  list.forEach((check) => {
+    const chainName = check.chain || "Onbekende keten";
+    const key = slugify(chainName);
+    if (!grouped.has(key)) {
+      grouped.set(key, { key, chain: chainName, locations: new Set(), checks: [] });
+    }
+    const group = grouped.get(key);
+    group.checks.push(check);
+    group.locations.add(slugify(check.location || "onbekend"));
+  });
+
+  return [...grouped.values()]
+    .map((group) => ({ ...group, locationCount: group.locations.size }))
+    .sort((a, b) => a.chain.localeCompare(b.chain));
 }
 
 function groupIntoStores(list) {
