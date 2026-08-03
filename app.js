@@ -178,7 +178,7 @@ let suggestTimer = null;
 let heicConverter = null;
 const convertedFiles = new Map();
 
-const CATEGORIES = ["FOOD", "DIY", "TOY", "CES", "Discount"];
+const CATEGORIES = ["FOOD", "DIY", "TOY", "CES", "Discount", "Convenience store", "Sports"];
 
 const COUNTRY_CODES = {
   Italie: "it",
